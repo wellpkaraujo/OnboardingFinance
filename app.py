@@ -16,7 +16,7 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.graphics.shapes import Drawing, Rect, Line, String, Circle
 from reportlab.graphics import renderPDF
 
-st.set_page_config(page_title="Relatórios Onboarding Finance", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Relatórios Onboarding", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
 <style>
@@ -1388,9 +1388,9 @@ def gerar_pdf_parceiro(nome_parceiro,total_p,dentro_p,fora_p,pct_d,pct_f,total_a
 # ─── SIDEBAR ───────────────────────────────────────────────────────────────────
 
 with st.sidebar:
-    st.markdown("## 📊 Relatórios Onboarding")
+    st.markdown("## 📊 Relatórios Onboarding Finance")
     st.markdown("---")
-    opcoes=["🏠 Início","📋 Chamados — Implantação","📋 Chamados — Open","📋 Chamados — Mapas",
+    opcoes=["🏠 Início","📋 Chamados — Implantação","📋 Chamados — Tech","📋 Chamados — Produtos",
             "📊 Gráficos — Chamados","📄 Status Atual — Chamados","🔧 Ordens de Serviço",
             "📈 Gráficos — OS","📄 Status Atual — OS","🤝 Parceiros","⚙️ Configuração de Motivos","ℹ️ Sobre"]
     pagina=st.radio("Navegação",opcoes,label_visibility="collapsed")
