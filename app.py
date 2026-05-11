@@ -16,7 +16,7 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.graphics.shapes import Drawing, Rect, Line, String, Circle
 from reportlab.graphics import renderPDF
 
-st.set_page_config(page_title="Relatórios Onboarding", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Relatórios Onboarding Finance", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
 <style>
