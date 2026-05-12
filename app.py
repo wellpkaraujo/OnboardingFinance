@@ -1411,14 +1411,14 @@ if pagina == "🏠 Início":
     st.markdown("### Bem-vindo ao sistema de Relatórios Onboarding")
     st.markdown("Utilize o menu lateral para navegar entre os módulos.")
     tem_imp=st.session_state.df_chamados_implantacao is not None
-    tem_open=st.session_state.df_chamados_open is not None
-    tem_map=st.session_state.df_chamados_mapas is not None
+    tem_open=st.session_state.df_chamados_tech is not None
+    tem_map=st.session_state.df_chamados_produtos is not None
     tem_os=st.session_state.dados_os is not None
     def _badge(ok): return "🟢" if ok else "⚪"
     st.markdown(f"""<div style="background:#f0f4f8;border-radius:10px;padding:14px 18px;margin-bottom:1rem;font-size:0.85rem;color:#444;">
         <b>Dados carregados nesta sessão:</b><br>
-        {_badge(tem_imp)} Chamados Implantação &nbsp;|&nbsp; {_badge(tem_open)} Chamados Open &nbsp;|&nbsp;
-        {_badge(tem_map)} Chamados Mapas &nbsp;|&nbsp; {_badge(tem_os)} Ordens de Serviço
+        {_badge(tem_imp)} Chamados Implantação &nbsp;|&nbsp; {_badge(tem_open)} Chamados Tech &nbsp;|&nbsp;
+        {_badge(tem_map)} Chamados Produtos &nbsp;|&nbsp; {_badge(tem_os)} Ordens de Serviço
     </div>""", unsafe_allow_html=True)
     c1,c2,c3,c4=st.columns(4)
     with c1: st.markdown('<div class="metric-card"><div class="label">Módulo</div><div class="value" style="font-size:1.4rem">📋</div><div class="sub">Chamados Implantação</div></div>', unsafe_allow_html=True)
@@ -2102,7 +2102,7 @@ O sistema salva automaticamente todos os dados no GitHub ao carregar qualquer pl
 Ao reabrir o sistema ou recarregar a página, todos os dados são restaurados automaticamente.
 
 Dados persistidos:
-- Planilhas de Chamados (Implantação, Open, Mapas) — formato Parquet
+- Planilhas de Chamados (Implantação, Tech, Produtos) — formato Parquet
 - Planilha de Ordens de Serviço — formato Parquet
 - Parceiros e CNPJs cadastrados
 - PDFs de Status Atual
