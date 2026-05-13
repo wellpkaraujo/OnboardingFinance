@@ -1957,5 +1957,5 @@ Dados persistidos:
 - Metadados (nome do arquivo, data de carregamento)
 
 ---
-Versão 3.3
+Versão 3.4
     """)
