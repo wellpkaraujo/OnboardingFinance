@@ -1392,7 +1392,7 @@ with st.sidebar:
     st.markdown("---")
     opcoes=["🏠 Início","📋 Chamados — Implantação","📋 Chamados — Tech","📋 Chamados — Produtos",
             "📊 Gráficos — Chamados","📄 Status Atual — Chamados","🔧 Ordens de Serviço",
-            "📈 Gráficos — OS","📄 Status Atual — OS","🤝 Parceiros","⚙️ Configuração de Motivos","ℹ️ Sobre"]
+            "📈 Gráficos — OS","📄 Status Atual — OS","⚙️ Configuração de Motivos","ℹ️ Sobre"]
     pagina=st.radio("Navegação",opcoes,label_visibility="collapsed")
     st.markdown("---")
     st.markdown('<div class="footer-custom">Versão 3.2</div>', unsafe_allow_html=True)
@@ -1909,158 +1909,6 @@ elif pagina == "📄 Status Atual — OS":
     if pdf_content: st.download_button(label="📥 Baixar Status Atual (PDF)",data=pdf_content,file_name="Status_Atual_OS.pdf",mime="application/pdf")
     elif erro: st.info(erro)
 
-elif pagina == "🤝 Parceiros":
-    import streamlit.components.v1 as components
-    import json as _json
-    st.markdown('<div class="section-title">🤝 Parceiros</div>', unsafe_allow_html=True)
-    col_esq,col_dir=st.columns([1,1.1],gap="large")
-    with col_esq:
-        st.markdown('<div class="section-title">Cadastro de Parceiro</div>', unsafe_allow_html=True)
-        nome_parceiro=st.text_input("Nome do parceiro",placeholder="Ex: Tecnospeed")
-        arquivo_cnpj=st.file_uploader("Planilha de CNPJs (xlsx ou csv)",type=["xlsx","csv"],key="upload_cnpj_parceiro")
-        if arquivo_cnpj and nome_parceiro.strip():
-            if st.button("💾 Salvar parceiro",type="primary"):
-                with st.spinner("Processando CNPJs..."):
-                    try:
-                        if arquivo_cnpj.name.endswith(".csv"): df_cnpj=pd.read_csv(arquivo_cnpj,encoding="utf-8-sig",sep=None,engine="python")
-                        else: df_cnpj=pd.read_excel(arquivo_cnpj)
-                        df_cnpj.columns=df_cnpj.columns.str.strip()
-                        col_cnpj=next((c for c in df_cnpj.columns if "cnpj" in str(c).lower()),None)
-                        if col_cnpj is None: col_cnpj=next((c for c in df_cnpj.columns if "inscri" in str(c).lower()),None)
-                        if col_cnpj is None: col_cnpj=df_cnpj.columns[0]
-                        cnpjs=set(df_cnpj[col_cnpj].dropna().apply(normalizar_cnpj).tolist())
-                        nome=nome_parceiro.strip(); ok,msg=upload_parceiro_github(nome,cnpjs)
-                        st.session_state.parceiros_lista[nome]=cnpjs; salvar_estado_github(salvar_dfs=False)
-                        if ok: st.success(f"✅ Parceiro **{nome}** salvo com {len(cnpjs)} CNPJs.")
-                        else: st.warning(f"Parceiro salvo localmente ({len(cnpjs)} CNPJs). GitHub: {msg}")
-                    except Exception as e: st.error(f"Erro: {e}")
-        elif arquivo_cnpj and not nome_parceiro.strip(): st.warning("Informe o nome do parceiro antes de salvar.")
-        if st.session_state.parceiros_lista:
-            st.markdown('<div class="section-title">Parceiros Cadastrados</div>', unsafe_allow_html=True)
-            for nome_p,cnpjs_p in list(st.session_state.parceiros_lista.items()):
-                ci,cb=st.columns([4,1])
-                with ci: st.markdown(f'<div style="background:#f0f4f8;border-left:3px solid #1F4E79;border-radius:6px;padding:8px 14px;font-size:0.85rem;margin-top:4px;">🏢 <b>{nome_p}</b> &nbsp;|&nbsp; {len(cnpjs_p)} CNPJs</div>', unsafe_allow_html=True)
-                with cb:
-                    if st.button("🗑️ Excluir",key=f"del_{nome_p}"):
-                        excluir_parceiro_github(nome_p); del st.session_state.parceiros_lista[nome_p]; salvar_estado_github(salvar_dfs=False); st.rerun()
-        else: st.info("Nenhum parceiro cadastrado ainda.")
-    with col_dir:
-        st.markdown('<div class="section-title">SLA de OS — Parceiro</div>', unsafe_allow_html=True)
-        if not st.session_state.parceiros_lista: st.info("Cadastre ao menos um parceiro para consultar o SLA.")
-        else:
-            parceiro_sel=st.selectbox("Selecionar parceiro",list(st.session_state.parceiros_lista.keys()))
-            cnpjs_parceiro=st.session_state.parceiros_lista.get(parceiro_sel,set())
-            df_os_dict=st.session_state.get("dados_os"); sla_dias=st.session_state.get("sla_dias",5)
-            if df_os_dict is None: st.info("Carregue uma planilha de OS no menu **🔧 Ordens de Serviço** para gerar o gráfico.")
-            else:
-                df_os_raw=df_os_dict.get("df"); col_final_os=df_os_dict.get("col_final")
-                col_insc=None
-                for c in df_os_raw.columns:
-                    if str(c).strip()=="Inscrição": col_insc=c; break
-                if col_insc is None:
-                    for c in df_os_raw.columns:
-                        cl=str(c).lower().strip()
-                        if "inscri" in cl and "aber" not in cl: col_insc=c; break
-                if col_insc is None: st.error("Coluna 'Inscrição' não encontrada na planilha de OS.")
-                else:
-                    df_os_p=df_os_raw.copy(); df_os_p["_cnpj_norm"]=df_os_p[col_insc].apply(normalizar_cnpj)
-                    df_os_p=df_os_p[df_os_p["_cnpj_norm"].isin(cnpjs_parceiro)]
-                    if len(df_os_p)==0: st.warning(f"Nenhuma OS encontrada para o parceiro **{parceiro_sel}**.")
-                    else:
-                        fin=df_os_p[df_os_p["Status Calculado"]=="Finalizada"].copy()
-                        if col_final_os and "Dias Uteis" in fin.columns:
-                            fin["Mes"]=fin[col_final_os].dt.to_period("M").astype(str); fin=fin.dropna(subset=["Mes"])
-                            total_p=len(fin); dentro_p=int((fin["Dias Uteis"]<=sla_dias).sum())
-                            fora_p=total_p-dentro_p
-                            pct_d=round(dentro_p/total_p*100,1) if total_p>0 else 0
-                            pct_f=round(fora_p/total_p*100,1) if total_p>0 else 0
-                            and_p=df_os_p[df_os_p["Status Calculado"]!="Finalizada"]; total_and=len(and_p); qtd_cnpjs=len(cnpjs_parceiro)
-                            c1,c2,c3,c4,c5=st.columns(5)
-                            with c1: st.markdown(f'<div class="metric-card"><div class="label">CNPJs</div><div class="value">{qtd_cnpjs}</div></div>', unsafe_allow_html=True)
-                            with c2: st.markdown(f'<div class="metric-card"><div class="label">OS Parceiro</div><div class="value">{total_p}</div></div>', unsafe_allow_html=True)
-                            with c3: st.markdown(f'<div class="metric-card metric-green"><div class="label">Dentro SLA</div><div class="value">{pct_d}%</div><div class="sub">{dentro_p} OS</div></div>', unsafe_allow_html=True)
-                            with c4: st.markdown(f'<div class="metric-card metric-red"><div class="label">Fora SLA</div><div class="value">{pct_f}%</div><div class="sub">{fora_p} OS</div></div>', unsafe_allow_html=True)
-                            with c5:
-                                cor_and="metric-orange" if total_and>0 else ""
-                                st.markdown(f'<div class="metric-card {cor_and}"><div class="label">Em Andamento</div><div class="value">{total_and}</div></div>', unsafe_allow_html=True)
-                            tab_p=fin.groupby("Mes").agg(Finalizadas=("Mes","count"),Dentro=("Dias Uteis",lambda x:(x<=sla_dias).sum())).reset_index()
-                            tab_p["Fora"]=tab_p["Finalizadas"]-tab_p["Dentro"]
-                            tab_p["Dentro_pct"]=(tab_p["Dentro"]/tab_p["Finalizadas"]*100).round(0).astype(int)
-                            tab_p["Fora_pct"]=(tab_p["Fora"]/tab_p["Finalizadas"]*100).round(0).astype(int)
-                            tab_p["Mês"]=tab_p["Mes"].apply(lambda m:mes_abrev(str(m)))
-                            st.markdown(f'<div class="section-title">OS Finalizadas por Mês — SLA ({parceiro_sel})</div>', unsafe_allow_html=True)
-                            lp2=tab_p["Mês"].tolist(); qp=tab_p["Finalizadas"].tolist(); dp2=tab_p["Dentro_pct"].tolist(); fp2=tab_p["Fora_pct"].tolist()
-                            pid=parceiro_sel.replace(' ','_').replace('/','_')
-                            components.html(f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head>
-<body style="margin:0;padding:0;background:transparent;font-family:'Inter',sans-serif;">
-<div style="padding:8px 0 0 0;">
-  <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:10px;font-size:12px;color:#666;justify-content:center;">
-    <span><span style="width:10px;height:10px;border-radius:2px;background:#b8c8e8;display:inline-block;"></span> % Dentro do SLA</span>
-    <span><span style="width:10px;height:10px;border-radius:2px;background:#f5c08a;display:inline-block;"></span> % Fora do SLA</span>
-    <span><span style="width:20px;height:2px;background:#2563eb;display:inline-block;vertical-align:middle;"></span> Finalizadas</span>
-  </div>
-  <div style="position:relative;width:100%;height:80px;"><canvas id="lc_{pid}"></canvas></div>
-  <div style="position:relative;width:100%;height:260px;"><canvas id="bc_{pid}"></canvas></div>
-</div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
-<script>
-const labels={_json.dumps(lp2)},qtd={qp},dentro={dp2},fora={fp2};
-let bC,lC;
-bC=new Chart(document.getElementById('bc_{pid}').getContext('2d'),{{data:{{labels,datasets:[
-  {{type:'bar',label:'% Dentro',data:dentro,backgroundColor:'#b8c8e8',stack:'s',barPercentage:0.5,categoryPercentage:0.65}},
-  {{type:'bar',label:'% Fora',data:fora,backgroundColor:'#f5c08a',stack:'s',barPercentage:0.5,categoryPercentage:0.65}}
-]}},options:{{responsive:true,maintainAspectRatio:false,animation:{{onComplete:sL}},
-layout:{{padding:{{left:0,right:0,bottom:4}}}},plugins:{{legend:{{display:false}}}},
-scales:{{x:{{stacked:true,grid:{{display:false}},ticks:{{font:{{size:12}},color:'#888'}},border:{{display:false}}}},
-y:{{stacked:true,min:0,max:100,ticks:{{callback:v=>v+'%',stepSize:25}},grid:{{color:'rgba(0,0,0,0.06)'}},border:{{display:false}}}}}}}},
-plugins:[{{id:'bL',afterDatasetsDraw(chart){{const ctx2=chart.ctx;
-  [[0,dentro,'#1e3a5f'],[1,fora,'#7a4a00']].forEach(([di,vals,clr])=>{{
-    chart.getDatasetMeta(di).data.forEach((bar,i)=>{{if(!vals[i])return;
-      ctx2.save();ctx2.font='500 11px Inter,sans-serif';ctx2.fillStyle=clr;ctx2.textAlign='center';ctx2.textBaseline='middle';
-      ctx2.fillText(vals[i]+'%',bar.x,bar.y+bar.height/2);ctx2.restore();}});
-  }});}}}}]
-}});
-function sL(){{if(!bC)return;const meta=bC.getDatasetMeta(0);const xP=meta.data.map(b=>b.x);
-  const lp=xP[0];const rp=bC.width-xP[xP.length-1];if(lC)lC.destroy();
-  lC=new Chart(document.getElementById('lc_{pid}').getContext('2d'),{{type:'line',
-    data:{{labels,datasets:[{{data:qtd,borderColor:'#2563eb',backgroundColor:'#2563eb',pointBackgroundColor:'#2563eb',pointRadius:5,borderWidth:2,tension:0}}]}},
-    options:{{responsive:true,maintainAspectRatio:false,layout:{{padding:{{top:20,left:lp,right:rp,bottom:4}}}},
-    plugins:{{legend:{{display:false}}}},scales:{{x:{{display:false}},y:{{display:false,min:Math.min(...qtd)*0.85,max:Math.max(...qtd)*1.1}}}}}},
-    plugins:[{{id:'lL',afterDatasetsDraw(chart){{const ctx2=chart.ctx;
-      chart.getDatasetMeta(0).data.forEach((pt,i)=>{{ctx2.save();ctx2.font='500 12px Inter,sans-serif';
-        ctx2.fillStyle='#1e3a5f';ctx2.textAlign='center';ctx2.fillText(qtd[i],pt.x,pt.y-10);ctx2.restore();}});}}}}]
-  }});
-}}
-</script></body></html>""", height=390)
-                            st.markdown('<div class="section-title">Resumo por Mês</div>', unsafe_allow_html=True)
-                            ts2=tab_p[["Mês","Finalizadas","Dentro","Dentro_pct","Fora","Fora_pct"]].copy()
-                            ts2.columns=["Mês","Finalizadas","Dentro do SLA","% Dentro","Fora do SLA","% Fora"]
-                            ts2["% Dentro"]=ts2["% Dentro"].astype(str)+"%"; ts2["% Fora"]=ts2["% Fora"].astype(str)+"%"
-                            st.markdown(estilizar(ts2), unsafe_allow_html=True)
-                            and_df=None
-                            if total_and>0:
-                                st.markdown('<div class="section-title">🔄 OS em Andamento</div>', unsafe_allow_html=True)
-                                cn=df_os_dict.get("col_num_os"); ce=df_os_dict.get("col_empresa"); cr=df_os_dict.get("col_responsavel")
-                                cs2={}
-                                if cn and cn in and_p.columns: cs2["N° OS"]=cn
-                                if ce and ce in and_p.columns: cs2["Empresa"]=ce
-                                if "Dias Uteis" in and_p.columns: cs2["Dias em Aberto"]="Dias Uteis"
-                                if cr and cr in and_p.columns: cs2["Responsável"]=cr
-                                if cs2:
-                                    and_df=and_p[[v for v in cs2.values()]].copy(); and_df.columns=list(cs2.keys())
-                                    if "Dias em Aberto" in and_df.columns: and_df=and_df.sort_values("Dias em Aberto",ascending=False)
-                                    and_df=and_df.reset_index(drop=True); st.markdown(estilizar(and_df), unsafe_allow_html=True)
-                            st.markdown("")
-                            if st.button("📄 Exportar PDF do Parceiro",type="primary",key=f"btn_pdf_{parceiro_sel}"):
-                                with st.spinner("Gerando PDF..."):
-                                    pdf_bytes=gerar_pdf_parceiro(nome_parceiro=parceiro_sel,total_p=total_p,dentro_p=dentro_p,fora_p=fora_p,
-                                        pct_d=pct_d,pct_f=pct_f,total_and=total_and,tab_p=tab_p,and_df=and_df if total_and>0 else None,
-                                        nome_arq_os=st.session_state.get("nome_arquivo_os","—"),data_arq_os=st.session_state.get("data_upload_os","—"),
-                                        sla_dias=sla_dias,qtd_cnpjs=qtd_cnpjs)
-                                st.download_button(label=f"📥 Baixar PDF — {parceiro_sel}",data=pdf_bytes,
-                                    file_name=f"SLA_Parceiro_{parceiro_sel.replace(' ','_')}_{datetime.today().strftime('%d%m%Y')}.pdf",
-                                    mime="application/pdf",key=f"dl_pdf_{parceiro_sel}")
-
 elif pagina == "⚙️ Configuração de Motivos":
     st.markdown('<div class="section-title">⚙️ Configuração de Motivos</div>', unsafe_allow_html=True)
     area_cfg=st.selectbox("Área",["Implantação","Open","Mapas"])
@@ -2109,5 +1957,5 @@ Dados persistidos:
 - Metadados (nome do arquivo, data de carregamento)
 
 ---
-Versão 3.2
+Versão 3.3
     """)
