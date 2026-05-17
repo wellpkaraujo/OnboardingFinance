@@ -1417,13 +1417,13 @@ if pagina == "🏠 Início":
     def _badge(ok): return "🟢" if ok else "⚪"
     st.markdown(f"""<div style="background:#f0f4f8;border-radius:10px;padding:14px 18px;margin-bottom:1rem;font-size:0.85rem;color:#444;">
         <b>Dados carregados nesta sessão:</b><br>
-        {_badge(tem_imp)} Chamados Implantação &nbsp;|&nbsp; {_badge(tem_open)} Chamados Open &nbsp;|&nbsp;
-        {_badge(tem_map)} Chamados Mapas &nbsp;|&nbsp; {_badge(tem_os)} Ordens de Serviço
+        {_badge(tem_imp)} Chamados Implantação &nbsp;|&nbsp; {_badge(tem_open)} Chamados Tech &nbsp;|&nbsp;
+        {_badge(tem_map)} Chamados Produtos &nbsp;|&nbsp; {_badge(tem_os)} Ordens de Serviço
     </div>""", unsafe_allow_html=True)
     c1,c2,c3,c4=st.columns(4)
     with c1: st.markdown('<div class="metric-card"><div class="label">Módulo</div><div class="value" style="font-size:1.4rem">📋</div><div class="sub">Chamados Implantação</div></div>', unsafe_allow_html=True)
-    with c2: st.markdown('<div class="metric-card"><div class="label">Módulo</div><div class="value" style="font-size:1.4rem">📋</div><div class="sub">Chamados Open</div></div>', unsafe_allow_html=True)
-    with c3: st.markdown('<div class="metric-card"><div class="label">Módulo</div><div class="value" style="font-size:1.4rem">📋</div><div class="sub">Chamados Mapas</div></div>', unsafe_allow_html=True)
+    with c2: st.markdown('<div class="metric-card"><div class="label">Módulo</div><div class="value" style="font-size:1.4rem">📋</div><div class="sub">Chamados Tech</div></div>', unsafe_allow_html=True)
+    with c3: st.markdown('<div class="metric-card"><div class="label">Módulo</div><div class="value" style="font-size:1.4rem">📋</div><div class="sub">Chamados Produtos</div></div>', unsafe_allow_html=True)
     with c4: st.markdown('<div class="metric-card"><div class="label">Módulo</div><div class="value" style="font-size:1.4rem">🔧</div><div class="sub">Ordens de Serviço</div></div>', unsafe_allow_html=True)
 
 elif pagina in ["📋 Chamados — Implantação","📋 Chamados — Open","📋 Chamados — Mapas"]:
@@ -1668,7 +1668,7 @@ new Chart(document.getElementById('{cid}').getContext('2d'),{{
         grafico_motivos_mes(df_inc_all,f"Top 3 Motivos de Incidentes — Período Completo")
         grafico_motivos_mes(df_sol_ma,f"Top 3 Motivos de Solicitações — {mal}")
         grafico_motivos_mes(df_inc_ma,f"Top 3 Motivos de Incidentes — {mal}")
-    tab_imp,tab_open,tab_map=st.tabs(["🏗️ Chamados Implantação","🌐 Chamados Open","🗺️ Chamados Mapas"])
+    tab_imp,tab_open,tab_map=st.tabs(["🏗️ Chamados Implantação","🌐 Chamados Tech","🗺️ Chamados Produtos"])
     with tab_imp:
         df_imp=st.session_state.get("df_chamados_implantacao")
         if df_imp is None: st.info("📋 Carregue uma planilha em **Chamados — Implantação** para gerar os gráficos.")
