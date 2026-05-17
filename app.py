@@ -1783,13 +1783,15 @@ elif pagina == "📄 Status Atual — OS":
 
 elif pagina == "⚙️ Configuração de Motivos":
     st.markdown('<div class="section-title">⚙️ Configuração de Motivos</div>', unsafe_allow_html=True)
-    area_cfg=st.selectbox("Área",["Implantação","Open","Mapas"])
+    _cfg_alias={"Tech":"Open","Produtos":"Mapas"}
+    area_cfg_display=st.selectbox("Área",["Implantação","Tech","Produtos"])
+    area_cfg=_cfg_alias.get(area_cfg_display,area_cfg_display)
     dic_cfg_map={"Implantação":("dic_implantacao",CLASSIFICACAO_IMPLANTACAO_PADRAO),"Open":("dic_open",CLASSIFICACAO_OPEN_PADRAO),"Mapas":("dic_mapas",CLASSIFICACAO_MAPAS_PADRAO)}
     key_dic,padrao=dic_cfg_map[area_cfg]; dic_atual=st.session_state[key_dic]
     st.info("🔴 Incidente = erro, falha ou comportamento incorreto   |   🔵 Solicitação = criação, consulta, alteração ou atividade operacional")
     rows_cfg=[{"Motivo":m,"Classificação":d["tipo"] if isinstance(d,dict) else d,"SLA":d.get("sla","") if isinstance(d,dict) else ""} for m,d in sorted(dic_atual.items())]
     df_cfg=pd.DataFrame(rows_cfg)
-    st.markdown(f"**{len(df_cfg)} motivos cadastrados para {area_cfg}**")
+    st.markdown(f"**{len(df_cfg)} motivos cadastrados para {area_cfg_display}**")
     edited=st.data_editor(df_cfg,use_container_width=True,num_rows="dynamic",
         column_config={"Motivo":st.column_config.TextColumn("Motivo",width="large"),
             "Classificação":st.column_config.SelectboxColumn("Classificação",width="medium",options=["Incidente","Solicitação","Melhoria - Solicitação de Melhoria"]),
@@ -1799,13 +1801,13 @@ elif pagina == "⚙️ Configuração de Motivos":
     with cs1:
         if st.button("💾 Salvar alterações",type="primary"):
             novo_dic={row["Motivo"]:{"tipo":row["Classificação"],"sla":row["SLA"] if row["SLA"] else None} for _,row in edited.iterrows() if str(row["Motivo"]).strip()}
-            st.session_state[key_dic]=novo_dic; st.success(f"✅ {len(novo_dic)} motivos salvos para {area_cfg}!")
+            st.session_state[key_dic]=novo_dic; st.success(f"✅ {len(novo_dic)} motivos salvos para {area_cfg_display}!")
     with cs2:
         if st.button("↺ Restaurar padrão"):
             st.session_state[key_dic]=dict(padrao); st.success("Restaurado!"); st.rerun()
     with cs3:
         st.download_button("📤 Exportar JSON",data=json.dumps(st.session_state[key_dic],ensure_ascii=False,indent=2),
-            file_name=f"classificacao_motivos_{area_cfg.lower()}.json",mime="application/json")
+            file_name=f"classificacao_motivos_{area_cfg_display.lower()}.json",mime="application/json")
 
 elif pagina == "ℹ️ Sobre":
     st.markdown('<div class="section-title">ℹ️ Sobre o programa</div>', unsafe_allow_html=True)
