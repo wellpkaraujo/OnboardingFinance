@@ -1390,7 +1390,7 @@ def gerar_pdf_parceiro(nome_parceiro,total_p,dentro_p,fora_p,pct_d,pct_f,total_a
 with st.sidebar:
     st.markdown("## 📊 Relatórios Onboarding Finance")
     st.markdown("---")
-    opcoes=["🏠 Início","📋 Chamados — Implantação","📋 Chamados — Open","📋 Chamados — Mapas",
+    opcoes=["🏠 Início","📋 Chamados — Implantação","📋 Chamados — Tech","📋 Chamados — Produtos",
             "📊 Gráficos — Chamados","📄 Status Atual — Chamados","🔧 Ordens de Serviço",
             "📈 Gráficos — OS","📄 Status Atual — OS","⚙️ Configuração de Motivos","ℹ️ Sobre"]
     pagina=st.radio("Navegação",opcoes,label_visibility="collapsed")
@@ -1417,25 +1417,27 @@ if pagina == "🏠 Início":
     def _badge(ok): return "🟢" if ok else "⚪"
     st.markdown(f"""<div style="background:#f0f4f8;border-radius:10px;padding:14px 18px;margin-bottom:1rem;font-size:0.85rem;color:#444;">
         <b>Dados carregados nesta sessão:</b><br>
-        {_badge(tem_imp)} Chamados Implantação &nbsp;|&nbsp; {_badge(tem_open)} Chamados Open &nbsp;|&nbsp;
-        {_badge(tem_map)} Chamados Mapas &nbsp;|&nbsp; {_badge(tem_os)} Ordens de Serviço
+        {_badge(tem_imp)} Chamados Implantação &nbsp;|&nbsp; {_badge(tem_open)} Chamados Tech &nbsp;|&nbsp;
+        {_badge(tem_map)} Chamados Produtos &nbsp;|&nbsp; {_badge(tem_os)} Ordens de Serviço
     </div>""", unsafe_allow_html=True)
     c1,c2,c3,c4=st.columns(4)
     with c1: st.markdown('<div class="metric-card"><div class="label">Módulo</div><div class="value" style="font-size:1.4rem">📋</div><div class="sub">Chamados Implantação</div></div>', unsafe_allow_html=True)
-    with c2: st.markdown('<div class="metric-card"><div class="label">Módulo</div><div class="value" style="font-size:1.4rem">📋</div><div class="sub">Chamados Open</div></div>', unsafe_allow_html=True)
-    with c3: st.markdown('<div class="metric-card"><div class="label">Módulo</div><div class="value" style="font-size:1.4rem">📋</div><div class="sub">Chamados Mapas</div></div>', unsafe_allow_html=True)
+    with c2: st.markdown('<div class="metric-card"><div class="label">Módulo</div><div class="value" style="font-size:1.4rem">📋</div><div class="sub">Chamados Tech</div></div>', unsafe_allow_html=True)
+    with c3: st.markdown('<div class="metric-card"><div class="label">Módulo</div><div class="value" style="font-size:1.4rem">📋</div><div class="sub">Chamados Produtos</div></div>', unsafe_allow_html=True)
     with c4: st.markdown('<div class="metric-card"><div class="label">Módulo</div><div class="value" style="font-size:1.4rem">🔧</div><div class="sub">Ordens de Serviço</div></div>', unsafe_allow_html=True)
 
-elif pagina in ["📋 Chamados — Implantação","📋 Chamados — Open","📋 Chamados — Mapas"]:
-    area=pagina.split("— ")[1]
+elif pagina in ["📋 Chamados — Implantação","📋 Chamados — Tech","📋 Chamados — Produtos"]:
+    _area_display=pagina.split("— ")[1]
+    _area_alias={"Tech":"Open","Produtos":"Mapas"}
+    area=_area_alias.get(_area_display,_area_display)
     dic_map={"Implantação":st.session_state.dic_implantacao,"Open":st.session_state.dic_open,"Mapas":st.session_state.dic_mapas}
     dic=dic_map[area]
     chave_df={"Implantação":"df_chamados_implantacao","Open":"df_chamados_open","Mapas":"df_chamados_mapas"}
     chave_nome={"Implantação":"nome_chamados_implantacao","Open":"nome_chamados_open","Mapas":"nome_chamados_mapas"}
     chave_data={"Implantação":"data_chamados_implantacao","Open":"data_chamados_open","Mapas":"data_chamados_mapas"}
     area_key_map={"Implantação":"implantacao","Open":"open","Mapas":"mapas"}
-    st.markdown(f'<div class="section-title">📋 Chamados — {area}</div>', unsafe_allow_html=True)
-    arquivo=st.file_uploader(f"Selecione a planilha de chamados ({area})",type=["xlsx","csv"],key=f"upload_{area}")
+    st.markdown(f'<div class="section-title">📋 Chamados — {_area_display}</div>', unsafe_allow_html=True)
+    arquivo=st.file_uploader(f"Selecione a planilha de chamados ({_area_display})",type=["xlsx","csv"],key=f"upload_{area}")
     if arquivo:
         with st.spinner("Analisando..."):
             if arquivo.name.endswith(".csv"):
@@ -1457,7 +1459,7 @@ elif pagina in ["📋 Chamados — Implantação","📋 Chamados — Open","📋
             st.toast(f"✅ Chamados {area} salvos!", icon="✅")
     df=st.session_state.get(chave_df[area])
     if df is None:
-        st.info(f"Selecione uma planilha de Chamados — {area} para iniciar a análise.")
+        st.info(f"Selecione uma planilha de Chamados — {_area_display} para iniciar a análise.")
     else:
         nome_arq=st.session_state.get(chave_nome[area]); data_arq=st.session_state.get(chave_data[area])
         if nome_arq and data_arq:
