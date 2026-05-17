@@ -209,7 +209,7 @@ def salvar_estado_github(salvar_dfs=True):
                     "Atualiza df_os"
                 )
 
-                st.warning("Upload df_os OK")
+                pass  # upload df_os concluído
 
             except Exception as e:
                 st.error(f"Erro upload df_os: {e}")
@@ -1390,7 +1390,7 @@ def gerar_pdf_parceiro(nome_parceiro,total_p,dentro_p,fora_p,pct_d,pct_f,total_a
 with st.sidebar:
     st.markdown("## 📊 Relatórios Onboarding Finance")
     st.markdown("---")
-    opcoes=["🏠 Início","📋 Chamados — Implantação","📋 Chamados — Tech","📋 Chamados — Produtos",
+    opcoes=["🏠 Início","📋 Chamados — Implantação","📋 Chamados — Open","📋 Chamados — Mapas",
             "📊 Gráficos — Chamados","📄 Status Atual — Chamados","🔧 Ordens de Serviço",
             "📈 Gráficos — OS","📄 Status Atual — OS","⚙️ Configuração de Motivos","ℹ️ Sobre"]
     pagina=st.radio("Navegação",opcoes,label_visibility="collapsed")
@@ -1417,13 +1417,13 @@ if pagina == "🏠 Início":
     def _badge(ok): return "🟢" if ok else "⚪"
     st.markdown(f"""<div style="background:#f0f4f8;border-radius:10px;padding:14px 18px;margin-bottom:1rem;font-size:0.85rem;color:#444;">
         <b>Dados carregados nesta sessão:</b><br>
-        {_badge(tem_imp)} Chamados Implantação &nbsp;|&nbsp; {_badge(tem_open)} Chamados Tech &nbsp;|&nbsp;
-        {_badge(tem_map)} Chamados Produtos &nbsp;|&nbsp; {_badge(tem_os)} Ordens de Serviço
+        {_badge(tem_imp)} Chamados Implantação &nbsp;|&nbsp; {_badge(tem_open)} Chamados Open &nbsp;|&nbsp;
+        {_badge(tem_map)} Chamados Mapas &nbsp;|&nbsp; {_badge(tem_os)} Ordens de Serviço
     </div>""", unsafe_allow_html=True)
     c1,c2,c3,c4=st.columns(4)
     with c1: st.markdown('<div class="metric-card"><div class="label">Módulo</div><div class="value" style="font-size:1.4rem">📋</div><div class="sub">Chamados Implantação</div></div>', unsafe_allow_html=True)
-    with c2: st.markdown('<div class="metric-card"><div class="label">Módulo</div><div class="value" style="font-size:1.4rem">📋</div><div class="sub">Chamados Tech</div></div>', unsafe_allow_html=True)
-    with c3: st.markdown('<div class="metric-card"><div class="label">Módulo</div><div class="value" style="font-size:1.4rem">📋</div><div class="sub">Chamados Produtos</div></div>', unsafe_allow_html=True)
+    with c2: st.markdown('<div class="metric-card"><div class="label">Módulo</div><div class="value" style="font-size:1.4rem">📋</div><div class="sub">Chamados Open</div></div>', unsafe_allow_html=True)
+    with c3: st.markdown('<div class="metric-card"><div class="label">Módulo</div><div class="value" style="font-size:1.4rem">📋</div><div class="sub">Chamados Mapas</div></div>', unsafe_allow_html=True)
     with c4: st.markdown('<div class="metric-card"><div class="label">Módulo</div><div class="value" style="font-size:1.4rem">🔧</div><div class="sub">Ordens de Serviço</div></div>', unsafe_allow_html=True)
 
 elif pagina in ["📋 Chamados — Implantação","📋 Chamados — Open","📋 Chamados — Mapas"]:
@@ -1957,5 +1957,5 @@ Dados persistidos:
 - Metadados (nome do arquivo, data de carregamento)
 
 ---
-Versão 3.5
+Versão 3.3
     """)
