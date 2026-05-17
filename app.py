@@ -159,14 +159,6 @@ def salvar_estado_github(salvar_dfs=True):
                 if k != "df"
             }
 
-        parceiros = st.session_state.get("parceiros_lista", {})
-
-        if parceiros:
-            estado["parceiros_lista"] = {
-                nome: sorted(list(cnpjs))
-                for nome, cnpjs in parceiros.items()
-            }
-
         gh_upload_bytes(
             "estado_app.json",
             json.dumps(
@@ -273,18 +265,6 @@ def carregar_estado_github():
                 )
             except:
                 pass
-
-        # ─────────────────────────────────────────────────────────────
-        # Restaurar parceiros
-        # ─────────────────────────────────────────────────────────────
-        if (
-            "parceiros_lista" in estado
-            and not st.session_state.get("parceiros_lista")
-        ):
-            st.session_state.parceiros_lista = {
-                nome: set(cnpjs)
-                for nome, cnpjs in estado["parceiros_lista"].items()
-            }
 
         # ─────────────────────────────────────────────────────────────
         # Restaurar dataframes auxiliares
@@ -610,7 +590,7 @@ _defaults = {
     "df_chamados_open": None, "df_chamados_mapas": None,
     "nome_chamados_implantacao": None, "nome_chamados_open": None, "nome_chamados_mapas": None,
     "data_chamados_implantacao": None, "data_chamados_open": None, "data_chamados_mapas": None,
-    "parceiros_lista": {}, "_estado_carregado": False,
+    "_estado_carregado": False,
 }
 for k, v in _defaults.items():
     if k not in st.session_state: st.session_state[k] = v
@@ -746,10 +726,8 @@ def analisar_os(file_content, sla_dias):
     df["Dentro SLA"] = df["Dias Uteis"] <= sla_dias
     return df, None
 
-def normalizar_cnpj(v):
-    return str(v).replace(".", "").replace("/", "").replace("-", "").strip().zfill(14)
 
-# ─── GITHUB PDF/PARCEIROS ──────────────────────────────────────────────────────
+# ─── GITHUB PDF ────────────────────────────────────────────────────────────────
 
 def upload_pdf_github(pdf_bytes, nome_arq="", data_arq=""):
     ok, err = gh_upload_bytes("status_atual.pdf", pdf_bytes, "Atualiza status_atual.pdf")
@@ -787,29 +765,6 @@ def baixar_base_historica_github():
     data, err = gh_download_bytes("OS_Base_Unificada_Jan25_Abr26.xlsx")
     return data, err if not data else None
 
-def upload_parceiro_github(nome_parceiro, cnpjs_set):
-    filename = f"parceiro_{nome_parceiro.lower().replace(' ','_')}.json"
-    payload = {"nome": nome_parceiro, "cnpjs": sorted(list(cnpjs_set))}
-    return gh_upload_bytes(filename, json.dumps(payload, ensure_ascii=False).encode(), f"Atualiza parceiro {nome_parceiro}")
-
-def excluir_parceiro_github(nome_parceiro):
-    return gh_delete(f"parceiro_{nome_parceiro.lower().replace(' ','_')}.json")
-
-def carregar_parceiros_github():
-    try:
-        token, repo, headers = _gh_headers()
-        if not token: return {}
-        r = requests.get(f"https://api.github.com/repos/{repo}/contents/", headers=headers)
-        if r.status_code != 200: return {}
-        arquivos = [f for f in r.json() if isinstance(f, dict) and f.get("name","").startswith("parceiro_") and f["name"].endswith(".json")]
-        resultado = {}
-        for arq in arquivos:
-            rb = requests.get(arq["url"], headers=headers)
-            if rb.status_code == 200:
-                dados = json.loads(base64.b64decode(rb.json()["content"]).decode())
-                resultado[dados["nome"]] = set(dados["cnpjs"])
-        return resultado
-    except: return {}
 
 # ─── EXCEL ─────────────────────────────────────────────────────────────────────
 
@@ -1296,94 +1251,6 @@ def gerar_pdf_chamados(area_label, df_area, nome_arq, data_arq):
               colWidths=[doc.width*0.6,doc.width*0.4])
     story.append(rod); doc.build(story); buf.seek(0); return buf.getvalue()
 
-def gerar_pdf_parceiro(nome_parceiro,total_p,dentro_p,fora_p,pct_d,pct_f,total_and,tab_p,and_df,nome_arq_os,data_arq_os,sla_dias,qtd_cnpjs=0):
-    AZUL=colors.HexColor('#1F4E79'); AZ_CL=colors.HexColor('#e8f0f8')
-    CINZA=colors.HexColor('#f5f8fc'); CINZA_BD=colors.HexColor('#e0e0e0')
-    BRANCO=colors.white; PRETO=colors.HexColor('#2c2c2a')
-    buf=io.BytesIO()
-    doc=SimpleDocTemplate(buf,pagesize=A4,leftMargin=1.5*cm,rightMargin=1.5*cm,topMargin=1.5*cm,bottomMargin=1.5*cm)
-    styles=getSampleStyleSheet()
-    normal=ParagraphStyle('n',fontSize=8,textColor=PRETO,fontName='Helvetica')
-    sec=ParagraphStyle('s',fontSize=11,textColor=AZUL,fontName='Helvetica-Bold',spaceBefore=10,spaceAfter=4)
-    valor_s=ParagraphStyle('v',fontSize=15,textColor=AZUL,fontName='Helvetica-Bold',alignment=TA_CENTER)
-    txt_w=ParagraphStyle('tw',fontSize=7,fontName='Helvetica',leading=9)
-    story=[]
-    ht=Table([[Paragraph(f'<font color="white" size="14"><b>Relatórios Onboarding — SLA de OS | Parceiro: {nome_parceiro}</b></font>',styles['Normal'])]],colWidths=[doc.width])
-    ht.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),AZUL),('TOPPADDING',(0,0),(-1,-1),12),('BOTTOMPADDING',(0,0),(-1,-1),6),('LEFTPADDING',(0,0),(-1,-1),14)]))
-    story.append(ht)
-    it=Table([[Paragraph(f'<b>Planilha OS:</b> {nome_arq_os}',normal),Paragraph(f'<b>Carregada em:</b> {data_arq_os}',normal)]],colWidths=[doc.width*0.55,doc.width*0.45])
-    it.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),AZ_CL),('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5),('LEFTPADDING',(0,0),(-1,-1),10)]))
-    story.append(it); story.append(Spacer(1,10))
-    story.append(Paragraph(f'SLA de OS — {nome_parceiro}',sec))
-    w5=doc.width/5; cor_and='#d35400' if total_and>0 else '#1F4E79'
-    et=Table([['CNPJs DO PARCEIRO','OS FINALIZADAS','DENTRO DO SLA','FORA DO SLA','EM ANDAMENTO'],
-        [Paragraph(f'<font color="#1F4E79" size="14"><b>{qtd_cnpjs}</b></font>',valor_s),
-         Paragraph(f'<font color="#1F4E79" size="14"><b>{total_p}</b></font>',valor_s),
-         Paragraph(f'<font color="#1a7a4a" size="14"><b>{pct_d}%</b></font>',valor_s),
-         Paragraph(f'<font color="#c0392b" size="14"><b>{pct_f}%</b></font>',valor_s),
-         Paragraph(f'<font color="{cor_and}" size="14"><b>{total_and}</b></font>',valor_s)],
-        ['CNPJs cadastrados','Total no período',f'{dentro_p} OS dentro',f'{fora_p} OS fora','OS em aberto']],colWidths=[w5]*5,rowHeights=[13,26,12])
-    et.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),BRANCO),
-        ('BOX',(0,0),(0,-1),0.5,CINZA_BD),('BOX',(1,0),(1,-1),0.5,CINZA_BD),('BOX',(2,0),(2,-1),0.5,CINZA_BD),('BOX',(3,0),(3,-1),0.5,CINZA_BD),('BOX',(4,0),(4,-1),0.5,CINZA_BD),
-        ('FONTSIZE',(0,0),(-1,-1),7),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
-        ('TEXTCOLOR',(0,0),(-1,0),colors.HexColor('#888888')),('TEXTCOLOR',(0,2),(-1,2),colors.HexColor('#888888')),
-        ('ALIGN',(0,0),(-1,-1),'CENTER'),('VALIGN',(0,0),(-1,-1),'MIDDLE'),
-        ('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]))
-    story.append(et); story.append(Spacer(1,12))
-    story.append(Paragraph(f'OS Finalizadas por Mês — SLA ({nome_parceiro})',sec))
-    mg=tab_p["Mês"].tolist(); dg=tab_p["Dentro_pct"].tolist(); fg=tab_p["Fora_pct"].tolist(); qg=tab_p["Finalizadas"].tolist()
-    n=len(mg); GW=doc.width; LH=50; ES=8; BH=100; LBH=18
-    d=Drawing(GW,LH+ES+BH+LBH); gap=GW/n if n>0 else GW; bw=gap*0.45; bb=LBH
-    for pct in [0,25,50,75,100]:
-        y=bb+BH*pct/100
-        d.add(Line(28,y,GW-5,y,strokeColor=colors.HexColor('#e8edf2'),strokeWidth=0.4))
-        d.add(String(24,y-3,f'{pct}%',fontSize=6,fillColor=colors.HexColor('#888888'),textAnchor='end'))
-    for i,mes in enumerate(mg):
-        cx=gap*i+gap/2; xb=cx-bw/2; hd=BH*dg[i]/100; hf=BH*fg[i]/100
-        d.add(Rect(xb,bb,bw,hd,fillColor=colors.HexColor('#b8c8e8'),strokeColor=None))
-        d.add(Rect(xb,bb+hd,bw,hf,fillColor=colors.HexColor('#f5c08a'),strokeColor=None))
-        d.add(String(cx,bb+hd/2-3,f'{dg[i]}%',fontSize=7,fillColor=colors.HexColor('#1e3a5f'),textAnchor='middle'))
-        ly=bb+hd+hf/2-3 if hf>10 else bb+hd+hf+2
-        d.add(String(cx,ly,f'{fg[i]}%',fontSize=6,fillColor=colors.HexColor('#7a4a00'),textAnchor='middle'))
-        d.add(String(cx,4,mes,fontSize=7,fillColor=PRETO,textAnchor='middle'))
-    lb=LBH+BH+ES; qmin=min(qg)-max(1,int(min(qg)*0.1)) if qg else 0; qmax=max(qg)+max(1,int(max(qg)*0.1)) if qg else 1
-    def my3(v): return lb+(v-qmin)/(qmax-qmin)*(LH-15) if qmax!=qmin else lb+LH/2
-    pts=[(gap*i+gap/2,my3(q)) for i,q in enumerate(qg)]
-    for i in range(len(pts)-1): d.add(Line(pts[i][0],pts[i][1],pts[i+1][0],pts[i+1][1],strokeColor=colors.HexColor('#2563eb'),strokeWidth=1.5))
-    for i,(px,py) in enumerate(pts):
-        d.add(Circle(px,py,4,fillColor=colors.HexColor('#2563eb'),strokeColor=None))
-        d.add(String(px,py+7,str(int(qg[i])),fontSize=7,fillColor=colors.HexColor('#1e3a5f'),textAnchor='middle'))
-    story.append(d)
-    leg=Table([[Paragraph('<font color="#b8c8e8">■</font> % Dentro do SLA',normal),Paragraph('<font color="#f5c08a">■</font> % Fora do SLA',normal),Paragraph('● Finalizadas',normal)]],colWidths=[doc.width/3]*3)
-    leg.setStyle(TableStyle([('ALIGN',(0,0),(-1,-1),'CENTER'),('FONTSIZE',(0,0),(-1,-1),7)]))
-    story.append(leg); story.append(Spacer(1,12))
-    story.append(Paragraph('Resumo por Mês',sec))
-    mr=[['Mês','Finalizadas','Dentro do SLA','% Dentro','Fora do SLA','% Fora']]
-    for _,row in tab_p.iterrows():
-        mr.append([row['Mês'],str(int(row['Finalizadas'])),str(int(row['Dentro'])),f"{int(row['Dentro_pct'])}%",str(int(row['Fora'])),f"{int(row['Fora_pct'])}%"])
-    tf=int(tab_p['Finalizadas'].sum()); td=int(tab_p['Dentro'].sum()); tfo=int(tab_p['Fora'].sum())
-    mr.append(['Total',str(tf),str(td),f"{round(td/tf*100) if tf>0 else 0}%",str(tfo),f"{round(tfo/tf*100) if tf>0 else 0}%"])
-    tm=Table(mr,colWidths=[doc.width/6]*6); _tab_style(tm,AZUL,BRANCO,CINZA,CINZA_BD,has_total=True,left_col=False)
-    story.append(tm); story.append(Spacer(1,12))
-    if and_df is not None and len(and_df)>0:
-        story.append(Paragraph('OS em Andamento',sec))
-        ca=list(and_df.columns)
-        cwa=[doc.width*0.12,doc.width*0.42,doc.width*0.16,doc.width*0.30] if len(ca)==4 else [doc.width/len(ca)]*len(ca)
-        ar=[ca]
-        for _,row in and_df.iterrows():
-            ar.append([Paragraph(str(row[c]),txt_w) if i==1 else str(row[c]) for i,c in enumerate(ca)])
-        ta=Table(ar,colWidths=cwa)
-        ta.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),AZUL),('TEXTCOLOR',(0,0),(-1,0),BRANCO),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
-            ('FONTSIZE',(0,0),(-1,-1),7),('ALIGN',(0,0),(-1,-1),'CENTER'),('VALIGN',(0,0),(-1,-1),'MIDDLE'),
-            ('ROWBACKGROUNDS',(0,1),(-1,-1),[BRANCO,CINZA]),('GRID',(0,0),(-1,-1),0.3,CINZA_BD),
-            ('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3),('ALIGN',(1,1),(1,-1),'LEFT')]))
-        story.append(ta); story.append(Spacer(1,8))
-    story.append(HRFlowable(width='100%',thickness=0.5,color=CINZA_BD)); story.append(Spacer(1,4))
-    agora_brt=datetime.now(timezone(timedelta(hours=-3))).strftime('%d/%m/%Y às %H:%M')
-    rod=Table([[Paragraph('Finnet - Relatório de Onboarding - Versão 3.2',normal),
-                Paragraph(f'Gerado em: {agora_brt} (horário de Brasília)',ParagraphStyle('r',fontSize=8,textColor=PRETO,fontName='Helvetica',alignment=TA_RIGHT))]],
-              colWidths=[doc.width*0.6,doc.width*0.4])
-    story.append(rod); doc.build(story); buf.seek(0); return buf.getvalue()
 
 # ─── SIDEBAR ───────────────────────────────────────────────────────────────────
 
@@ -1952,9 +1819,8 @@ O sistema salva automaticamente todos os dados no GitHub ao carregar qualquer pl
 Ao reabrir o sistema ou recarregar a página, todos os dados são restaurados automaticamente.
 
 Dados persistidos:
-- Planilhas de Chamados (Implantação, Open, Mapas) — formato Parquet
+- Planilhas de Chamados (Implantação, Tech, Produtos) — formato Parquet
 - Planilha de Ordens de Serviço — formato Parquet
-- Parceiros e CNPJs cadastrados
 - PDFs de Status Atual
 - Metadados (nome do arquivo, data de carregamento)
 
