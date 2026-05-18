@@ -139,10 +139,10 @@ def salvar_estado_github(salvar_dfs=True):
             "data_upload_os",
             "nome_chamados_implantacao",
             "data_chamados_implantacao",
-            "nome_chamados_open",
-            "data_chamados_open",
-            "nome_chamados_mapas",
-            "data_chamados_mapas",
+            "nome_chamados_tech",
+            "data_chamados_tech",
+            "nome_chamados_produtos",
+            "data_chamados_produtos",
             "sla_dias",
             "resumo_executivo"
         ]:
@@ -177,8 +177,8 @@ def salvar_estado_github(salvar_dfs=True):
             try:
                 for key, filename in [
                     ("df_chamados_implantacao", "df_chamados_implantacao.parquet"),
-                    ("df_chamados_open", "df_chamados_open.parquet"),
-                    ("df_chamados_mapas", "df_chamados_mapas.parquet")
+                    ("df_chamados_tech", "df_chamados_tech.parquet"),
+                    ("df_chamados_produtos", "df_chamados_produtos.parquet")
                 ]:
 
                     df = st.session_state.get(key)
@@ -245,10 +245,10 @@ def carregar_estado_github():
             "data_upload_os",
             "nome_chamados_implantacao",
             "data_chamados_implantacao",
-            "nome_chamados_open",
-            "data_chamados_open",
-            "nome_chamados_mapas",
-            "data_chamados_mapas",
+            "nome_chamados_tech",
+            "data_chamados_tech",
+            "nome_chamados_produtos",
+            "data_chamados_produtos",
             "sla_dias",
             "resumo_executivo",
         ]:
@@ -274,8 +274,8 @@ def carregar_estado_github():
         # ─────────────────────────────────────────────────────────────
         for key, filename in [
             ("df_chamados_implantacao", "df_chamados_implantacao.parquet"),
-            ("df_chamados_open", "df_chamados_open.parquet"),
-            ("df_chamados_mapas", "df_chamados_mapas.parquet"),
+            ("df_chamados_tech", "df_chamados_tech.parquet"),
+            ("df_chamados_produtos", "df_chamados_produtos.parquet"),
         ]:
 
             if st.session_state.get(key) is None:
@@ -526,7 +526,7 @@ CLASSIFICACAO_IMPLANTACAO_PADRAO = {
     "Projeto em andamento (de 0 a 50 contas)":{"tipo":"Solicitação","sla":None},
 }
 
-CLASSIFICACAO_OPEN_PADRAO = {
+CLASSIFICACAO_TECH_PADRAO = {
     "Incidente - Erro de API":{"tipo":"Incidente","sla":"08:00"},
     "Incidente - Falha de autenticação API":{"tipo":"Incidente","sla":"08:00"},
     "Incidente - Falha de processamento (Open Finance)":{"tipo":"Incidente","sla":"08:00"},
@@ -568,7 +568,7 @@ CLASSIFICACAO_OPEN_PADRAO = {
     "Melhoria - Solicitação de melhoria":{"tipo":"Melhoria - Solicitação de Melhoria","sla":"24:00"},
 }
 
-CLASSIFICACAO_MAPAS_PADRAO = {
+CLASSIFICACAO_PRODUTOS_PADRAO = {
     "Correção de mapa / Bug - Produção":{"tipo":"Incidente","sla":"04:00"},
     "Correção de mapa / Bug - Homologação":{"tipo":"Incidente","sla":"16:00"},
     "Indisponibilidade de ambiente":{"tipo":"Incidente","sla":"02:00"},
@@ -585,14 +585,14 @@ CLASSIFICACAO_MAPAS_PADRAO = {
 
 _defaults = {
     "dic_implantacao": dict(CLASSIFICACAO_IMPLANTACAO_PADRAO),
-    "dic_open": dict(CLASSIFICACAO_OPEN_PADRAO),
-    "dic_mapas": dict(CLASSIFICACAO_MAPAS_PADRAO),
+    "dic_tech": dict(CLASSIFICACAO_TECH_PADRAO),
+    "dic_produtos": dict(CLASSIFICACAO_PRODUTOS_PADRAO),
     "sla_dias": 5, "tab_mes_graficos": None, "nome_arquivo_os": None,
     "data_upload_os": None, "resumo_executivo": None, "dados_os": None,
     "historico_2025_ativo": False, "df_chamados_implantacao": None,
-    "df_chamados_open": None, "df_chamados_mapas": None,
-    "nome_chamados_implantacao": None, "nome_chamados_open": None, "nome_chamados_mapas": None,
-    "data_chamados_implantacao": None, "data_chamados_open": None, "data_chamados_mapas": None,
+    "df_chamados_tech": None, "df_chamados_produtos": None,
+    "nome_chamados_implantacao": None, "nome_chamados_tech": None, "nome_chamados_produtos": None,
+    "data_chamados_implantacao": None, "data_chamados_tech": None, "data_chamados_produtos": None,
     "_estado_carregado": False,
 }
 for k, v in _defaults.items():
@@ -1281,13 +1281,13 @@ if pagina == "🏠 Início":
     st.markdown("### Bem-vindo ao sistema de Relatórios Onboarding")
     st.markdown("Utilize o menu lateral para navegar entre os módulos.")
     tem_imp=st.session_state.df_chamados_implantacao is not None
-    tem_open=st.session_state.df_chamados_open is not None
-    tem_map=st.session_state.df_chamados_mapas is not None
+    tem_tech=st.session_state.df_chamados_tech is not None
+    tem_map=st.session_state.df_chamados_produtos is not None
     tem_os=st.session_state.dados_os is not None
     def _badge(ok): return "🟢" if ok else "⚪"
     st.markdown(f"""<div style="background:#f0f4f8;border-radius:10px;padding:14px 18px;margin-bottom:1rem;font-size:0.85rem;color:#444;">
         <b>Dados carregados nesta sessão:</b><br>
-        {_badge(tem_imp)} Chamados Implantação &nbsp;|&nbsp; {_badge(tem_open)} Chamados Tech &nbsp;|&nbsp;
+        {_badge(tem_imp)} Chamados Implantação &nbsp;|&nbsp; {_badge(tem_tech)} Chamados Tech &nbsp;|&nbsp;
         {_badge(tem_map)} Chamados Produtos &nbsp;|&nbsp; {_badge(tem_os)} Ordens de Serviço
     </div>""", unsafe_allow_html=True)
     c1,c2,c3,c4=st.columns(4)
@@ -1297,17 +1297,15 @@ if pagina == "🏠 Início":
     with c4: st.markdown('<div class="metric-card"><div class="label">Módulo</div><div class="value" style="font-size:1.4rem">🔧</div><div class="sub">Ordens de Serviço</div></div>', unsafe_allow_html=True)
 
 elif pagina in ["📋 Chamados — Implantação","📋 Chamados — Tech","📋 Chamados — Produtos"]:
-    _area_display=pagina.split("— ")[1]
-    _area_alias={"Tech":"Open","Produtos":"Mapas"}
-    area=_area_alias.get(_area_display,_area_display)
-    dic_map={"Implantação":st.session_state.dic_implantacao,"Open":st.session_state.dic_open,"Mapas":st.session_state.dic_mapas}
+    area=pagina.split("— ")[1]
+    dic_map={"Implantação":st.session_state.dic_implantacao,"Tech":st.session_state.dic_tech,"Produtos":st.session_state.dic_produtos}
     dic=dic_map[area]
-    chave_df={"Implantação":"df_chamados_implantacao","Open":"df_chamados_open","Mapas":"df_chamados_mapas"}
-    chave_nome={"Implantação":"nome_chamados_implantacao","Open":"nome_chamados_open","Mapas":"nome_chamados_mapas"}
-    chave_data={"Implantação":"data_chamados_implantacao","Open":"data_chamados_open","Mapas":"data_chamados_mapas"}
-    area_key_map={"Implantação":"implantacao","Open":"open","Mapas":"mapas"}
-    st.markdown(f'<div class="section-title">📋 Chamados — {_area_display}</div>', unsafe_allow_html=True)
-    arquivo=st.file_uploader(f"Selecione a planilha de chamados ({_area_display})",type=["xlsx","csv"],key=f"upload_{area}")
+    chave_df={"Implantação":"df_chamados_implantacao","Tech":"df_chamados_tech","Produtos":"df_chamados_produtos"}
+    chave_nome={"Implantação":"nome_chamados_implantacao","Tech":"nome_chamados_tech","Produtos":"nome_chamados_produtos"}
+    chave_data={"Implantação":"data_chamados_implantacao","Tech":"data_chamados_tech","Produtos":"data_chamados_produtos"}
+    area_key_map={"Implantação":"implantacao","Tech":"tech","Produtos":"produtos"}
+    st.markdown(f'<div class="section-title">📋 Chamados — {area}</div>', unsafe_allow_html=True)
+    arquivo=st.file_uploader(f"Selecione a planilha de chamados ({area})",type=["xlsx","csv"],key=f"upload_{area}")
     if arquivo:
         with st.spinner("Analisando..."):
             if arquivo.name.endswith(".csv"):
@@ -1329,7 +1327,7 @@ elif pagina in ["📋 Chamados — Implantação","📋 Chamados — Tech","📋
             st.toast(f"✅ Chamados {area} salvos!", icon="✅")
     df=st.session_state.get(chave_df[area])
     if df is None:
-        st.info(f"Selecione uma planilha de Chamados — {_area_display} para iniciar a análise.")
+        st.info(f"Selecione uma planilha de Chamados — {area} para iniciar a análise.")
     else:
         nome_arq=st.session_state.get(chave_nome[area]); data_arq=st.session_state.get(chave_data[area])
         if nome_arq and data_arq:
@@ -1540,7 +1538,7 @@ new Chart(document.getElementById('{cid}').getContext('2d'),{{
         grafico_motivos_mes(df_inc_all,f"Top 3 Motivos de Incidentes — Período Completo")
         grafico_motivos_mes(df_sol_ma,f"Top 3 Motivos de Solicitações — {mal}")
         grafico_motivos_mes(df_inc_ma,f"Top 3 Motivos de Incidentes — {mal}")
-    tab_imp,tab_open,tab_map=st.tabs(["🏗️ Chamados Implantação","🌐 Chamados Tech","🗺️ Chamados Produtos"])
+    tab_imp,tab_tech,tab_prod=st.tabs(["🏗️ Chamados Implantação","🌐 Chamados Tech","🗺️ Chamados Produtos"])
     with tab_imp:
         df_imp=st.session_state.get("df_chamados_implantacao")
         if df_imp is None: st.info("📋 Carregue uma planilha em **Chamados — Implantação** para gerar os gráficos.")
@@ -1549,22 +1547,22 @@ new Chart(document.getElementById('{cid}').getContext('2d'),{{
             if n2 and d2: st.markdown(f'<div style="background:#f0f4f8;border-left:4px solid #1F4E79;border-radius:6px;padding:10px 16px;margin-bottom:1rem;font-size:0.85rem;color:#444;">📂 <b>Planilha:</b> {n2} &nbsp;|&nbsp; 🕐 <b>Carregada em:</b> {d2}</div>', unsafe_allow_html=True)
             st.markdown('<div class="section-title">Resumo Executivo</div>', unsafe_allow_html=True)
             render_graficos_chamados(df_imp,"Implantação")
-    with tab_open:
-        df_open=st.session_state.get("df_chamados_open")
-        if df_open is None: st.info("📋 Carregue uma planilha em **Chamados — Open** para gerar os gráficos.")
+    with tab_tech:
+        df_tech=st.session_state.get("df_chamados_tech")
+        if df_tech is None: st.info("📋 Carregue uma planilha em **Chamados — Tech** para gerar os gráficos.")
         else:
-            n2=st.session_state.get("nome_chamados_open"); d2=st.session_state.get("data_chamados_open")
+            n2=st.session_state.get("nome_chamados_tech"); d2=st.session_state.get("data_chamados_tech")
             if n2 and d2: st.markdown(f'<div style="background:#f0f4f8;border-left:4px solid #1F4E79;border-radius:6px;padding:10px 16px;margin-bottom:1rem;font-size:0.85rem;color:#444;">📂 <b>Planilha:</b> {n2} &nbsp;|&nbsp; 🕐 <b>Carregada em:</b> {d2}</div>', unsafe_allow_html=True)
             st.markdown('<div class="section-title">Resumo Executivo</div>', unsafe_allow_html=True)
-            render_graficos_chamados(df_open,"Open")
-    with tab_map:
-        df_map=st.session_state.get("df_chamados_mapas")
-        if df_map is None: st.info("📋 Carregue uma planilha em **Chamados — Mapas** para gerar os gráficos.")
+            render_graficos_chamados(df_tech,"Tech")
+    with tab_prod:
+        df_prod=st.session_state.get("df_chamados_produtos")
+        if df_prod is None: st.info("📋 Carregue uma planilha em **Chamados — Produtos** para gerar os gráficos.")
         else:
-            n2=st.session_state.get("nome_chamados_mapas"); d2=st.session_state.get("data_chamados_mapas")
+            n2=st.session_state.get("nome_chamados_produtos"); d2=st.session_state.get("data_chamados_produtos")
             if n2 and d2: st.markdown(f'<div style="background:#f0f4f8;border-left:4px solid #1F4E79;border-radius:6px;padding:10px 16px;margin-bottom:1rem;font-size:0.85rem;color:#444;">📂 <b>Planilha:</b> {n2} &nbsp;|&nbsp; 🕐 <b>Carregada em:</b> {d2}</div>', unsafe_allow_html=True)
             st.markdown('<div class="section-title">Resumo Executivo</div>', unsafe_allow_html=True)
-            render_graficos_chamados(df_map,"Mapas")
+            render_graficos_chamados(df_prod,"Produtos")
 
 elif pagina == "📄 Status Atual — Chamados":
     st.markdown('<div class="section-title">📄 Status Atual — Chamados</div>', unsafe_allow_html=True)
@@ -1576,10 +1574,10 @@ elif pagina == "📄 Status Atual — Chamados":
             pdf_content,erro=baixar_pdf_chamados_github(area_key)
         if pdf_content: st.download_button(label=f"📥 Baixar Status Atual — Chamados {area_label} (PDF)",data=pdf_content,file_name=f"Status_Atual_Chamados_{area_label}.pdf",mime="application/pdf")
         elif erro: st.info(erro)
-    tab_imp,tab_open,tab_map=st.tabs(["🏗️ Implantação","🌐 Open","🗺️ Mapas"])
+    tab_imp,tab_tech,tab_prod=st.tabs(["🏗️ Implantação","🌐 Tech","🗺️ Produtos"])
     with tab_imp: render_download_chamados("implantacao","Implantação")
-    with tab_open: render_download_chamados("open","Open")
-    with tab_map: render_download_chamados("mapas","Mapas")
+    with tab_tech: render_download_chamados("tech","Tech")
+    with tab_prod: render_download_chamados("produtos","Produtos")
 
 elif pagina == "🔧 Ordens de Serviço":
     st.markdown('<div class="section-title">🔧 Ordens de Serviço</div>', unsafe_allow_html=True)
@@ -1783,15 +1781,13 @@ elif pagina == "📄 Status Atual — OS":
 
 elif pagina == "⚙️ Configuração de Motivos":
     st.markdown('<div class="section-title">⚙️ Configuração de Motivos</div>', unsafe_allow_html=True)
-    _cfg_alias={"Tech":"Open","Produtos":"Mapas"}
-    area_cfg_display=st.selectbox("Área",["Implantação","Tech","Produtos"])
-    area_cfg=_cfg_alias.get(area_cfg_display,area_cfg_display)
-    dic_cfg_map={"Implantação":("dic_implantacao",CLASSIFICACAO_IMPLANTACAO_PADRAO),"Open":("dic_open",CLASSIFICACAO_OPEN_PADRAO),"Mapas":("dic_mapas",CLASSIFICACAO_MAPAS_PADRAO)}
+    area_cfg=st.selectbox("Área",["Implantação","Tech","Produtos"])
+    dic_cfg_map={"Implantação":("dic_implantacao",CLASSIFICACAO_IMPLANTACAO_PADRAO),"Tech":("dic_tech",CLASSIFICACAO_TECH_PADRAO),"Produtos":("dic_produtos",CLASSIFICACAO_PRODUTOS_PADRAO)}
     key_dic,padrao=dic_cfg_map[area_cfg]; dic_atual=st.session_state[key_dic]
     st.info("🔴 Incidente = erro, falha ou comportamento incorreto   |   🔵 Solicitação = criação, consulta, alteração ou atividade operacional")
     rows_cfg=[{"Motivo":m,"Classificação":d["tipo"] if isinstance(d,dict) else d,"SLA":d.get("sla","") if isinstance(d,dict) else ""} for m,d in sorted(dic_atual.items())]
     df_cfg=pd.DataFrame(rows_cfg)
-    st.markdown(f"**{len(df_cfg)} motivos cadastrados para {area_cfg_display}**")
+    st.markdown(f"**{len(df_cfg)} motivos cadastrados para {area_cfg}**")
     edited=st.data_editor(df_cfg,use_container_width=True,num_rows="dynamic",
         column_config={"Motivo":st.column_config.TextColumn("Motivo",width="large"),
             "Classificação":st.column_config.SelectboxColumn("Classificação",width="medium",options=["Incidente","Solicitação","Melhoria - Solicitação de Melhoria"]),
@@ -1801,13 +1797,13 @@ elif pagina == "⚙️ Configuração de Motivos":
     with cs1:
         if st.button("💾 Salvar alterações",type="primary"):
             novo_dic={row["Motivo"]:{"tipo":row["Classificação"],"sla":row["SLA"] if row["SLA"] else None} for _,row in edited.iterrows() if str(row["Motivo"]).strip()}
-            st.session_state[key_dic]=novo_dic; st.success(f"✅ {len(novo_dic)} motivos salvos para {area_cfg_display}!")
+            st.session_state[key_dic]=novo_dic; st.success(f"✅ {len(novo_dic)} motivos salvos para {area_cfg}!")
     with cs2:
         if st.button("↺ Restaurar padrão"):
             st.session_state[key_dic]=dict(padrao); st.success("Restaurado!"); st.rerun()
     with cs3:
         st.download_button("📤 Exportar JSON",data=json.dumps(st.session_state[key_dic],ensure_ascii=False,indent=2),
-            file_name=f"classificacao_motivos_{area_cfg_display.lower()}.json",mime="application/json")
+            file_name=f"classificacao_motivos_{area_cfg.lower()}.json",mime="application/json")
 
 elif pagina == "ℹ️ Sobre":
     st.markdown('<div class="section-title">ℹ️ Sobre o programa</div>', unsafe_allow_html=True)
