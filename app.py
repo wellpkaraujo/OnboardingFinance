@@ -1849,10 +1849,51 @@ function syncLine(){{
 
                         saldo_anterior = saldo_final
 
+                    # Filtro de período do gráfico
                     st.markdown(
                         '<div class="section-title">Fluxo Diário Operacional de OS</div>',
                         unsafe_allow_html=True
                     )
+
+                    col1, col2 = st.columns(2)
+
+                    with col1:
+                        data_inicio_filtro = st.date_input(
+                            "Data Inicial",
+                            value=dias.min().date(),
+                            key="fluxo_os_inicio"
+                        )
+
+                    with col2:
+                        data_fim_filtro = st.date_input(
+                            "Data Final",
+                            value=dias.max().date(),
+                            key="fluxo_os_fim"
+                        )
+
+                    df_grafico = pd.DataFrame({
+                        "Data": pd.to_datetime(labels_dias, format="%d/%m"),
+                        "Abertura": abertura_lista,
+                        "Entrantes": entrantes_lista,
+                        "Encerradas": encerradas_lista,
+                        "Saldo": saldo_lista
+                    })
+
+                    ano_atual = pd.Timestamp.today().year
+                    df_grafico["Data"] = df_grafico["Data"].apply(
+                        lambda x: x.replace(year=ano_atual)
+                    )
+
+                    df_grafico = df_grafico[
+                        (df_grafico["Data"].dt.date >= data_inicio_filtro) &
+                        (df_grafico["Data"].dt.date <= data_fim_filtro)
+                    ]
+
+                    labels_dias = df_grafico["Data"].dt.strftime("%d/%m").tolist()
+                    abertura_lista = df_grafico["Abertura"].tolist()
+                    entrantes_lista = df_grafico["Entrantes"].tolist()
+                    encerradas_lista = df_grafico["Encerradas"].tolist()
+                    saldo_lista = df_grafico["Saldo"].tolist()
 
                     components.html(f"""<!DOCTYPE html>
 <html>
