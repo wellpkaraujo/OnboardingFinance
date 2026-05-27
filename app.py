@@ -1615,13 +1615,18 @@ new Chart(document.getElementById('fluxoDiarioCh_{label_area}').getContext('2d')
 
         # ── Performance por Responsável — Chamados ────────────────────
         try:
-            col_resp_ch = "Criado por" if "Criado por" in df_area.columns else None
+            # Busca dinâmica pela coluna de responsável atual da planilha
+            _kws_resp = ["atribuído","atribuido","responsável","responsavel","agente","assignee","assigned to","owner","analista"]
+            col_resp_ch = next(
+                (c for c in df_area.columns if any(kw in str(c).lower() for kw in _kws_resp)),
+                None
+            )
             if col_resp_ch and "Criação do Ticket" in df_area.columns:
                 df_rch = df_area.copy()
                 df_rch["Criação do Ticket"] = pd.to_datetime(df_rch["Criação do Ticket"], errors="coerce", dayfirst=True)
                 df_rch = df_rch[df_rch[col_resp_ch].astype(str).str.strip().str.lower() != "nan"]
 
-                st.markdown('<div class="section-title">Performance por Responsável — Chamados</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="section-title">Performance por Responsável — Chamados <span style="font-size:0.78rem;font-weight:400;color:#888;margin-left:8px;">coluna: {col_resp_ch}</span></div>', unsafe_allow_html=True)
 
                 data_min_rch = df_rch["Criação do Ticket"].min().date()
                 data_max_rch = pd.Timestamp.today().date()
