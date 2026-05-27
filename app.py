@@ -1861,6 +1861,7 @@ function syncLine(){{
                         data_inicio_filtro = st.date_input(
                             "Data Inicial",
                             value=dias.min().date(),
+                            format="DD/MM/YYYY",
                             key="fluxo_os_inicio"
                         )
 
@@ -1868,6 +1869,7 @@ function syncLine(){{
                         data_fim_filtro = st.date_input(
                             "Data Final",
                             value=dias.max().date(),
+                            format="DD/MM/YYYY",
                             key="fluxo_os_fim"
                         )
 
@@ -2029,9 +2031,9 @@ new Chart(document.getElementById('rfChart').getContext('2d'),{{
                     data_max_resp = pd.Timestamp.today().date()
 
                     with col_f1:
-                        resp_inicio = st.date_input("Data Inicial", value=data_min_resp, key="perf_resp_inicio")
+                        resp_inicio = st.date_input("Data Inicial", value=data_min_resp, format="DD/MM/YYYY", key="perf_resp_inicio")
                     with col_f2:
-                        resp_fim = st.date_input("Data Final", value=data_max_resp, key="perf_resp_fim")
+                        resp_fim = st.date_input("Data Final", value=data_max_resp, format="DD/MM/YYYY", key="perf_resp_fim")
 
                     # Lista de responsáveis ordenada
                     lista_responsaveis = sorted(df_resp[col_responsavel_g].dropna().astype(str).str.strip().unique().tolist())
