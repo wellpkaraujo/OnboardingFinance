@@ -2003,34 +2003,93 @@ new Chart(document.getElementById('rfChart').getContext('2d'),{{
             if dados_os_resp:
                 df_resp = dados_os_resp["df"].copy()
                 col_responsavel_g = dados_os_resp.get("col_responsavel")
-                col_final_g = dados_os_resp.get("col_final")
-                col_status_g = dados_os_resp.get("col_status")
+                col_final_g       = dados_os_resp.get("col_final")
+                col_criacao_g     = dados_os_resp.get("col_criacao")
 
                 if col_responsavel_g and col_responsavel_g in df_resp.columns and col_final_g and col_final_g in df_resp.columns:
+
                     df_resp[col_final_g] = pd.to_datetime(df_resp[col_final_g], errors="coerce", dayfirst=True)
+                    if col_criacao_g and col_criacao_g in df_resp.columns:
+                        df_resp[col_criacao_g] = pd.to_datetime(df_resp[col_criacao_g], errors="coerce", dayfirst=True)
 
-                    # Considera finalizada qualquer OS com data de finalização preenchida
-                    finalizadas_resp = df_resp[df_resp[col_final_g].notna()].copy()
-                    total_resp = df_resp.groupby(col_responsavel_g).size().reset_index(name="Total")
-                    fin_resp = finalizadas_resp.groupby(col_responsavel_g).size().reset_index(name="Finalizadas")
-                    perf = total_resp.merge(fin_resp, on=col_responsavel_g, how="left").fillna(0)
-                    perf["Finalizadas"] = perf["Finalizadas"].astype(int)
-                    perf["Em Aberto"] = perf["Total"] - perf["Finalizadas"]
-                    perf["Taxa (%)"] = (perf["Finalizadas"] / perf["Total"] * 100).round(1)
-                    perf = perf.sort_values("Finalizadas", ascending=False).head(20)
-                    perf = perf[perf[col_responsavel_g].astype(str).str.strip().str.lower() != "nan"]
-
-                    responsaveis_list = perf[col_responsavel_g].tolist()
-                    finalizadas_list = perf["Finalizadas"].tolist()
-                    aberto_list = perf["Em Aberto"].tolist()
-                    taxa_list = perf["Taxa (%)"].tolist()
+                    df_resp = df_resp[df_resp[col_responsavel_g].astype(str).str.strip().str.lower() != "nan"]
 
                     st.markdown('<div class="section-title">Performance por Responsável — OS Finalizadas</div>', unsafe_allow_html=True)
-                    components.html(f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+
+                    # ── Filtros ────────────────────────────────────────────
+                    col_f1, col_f2, col_f3 = st.columns([1, 1, 2])
+
+                    # Datas mínima/máxima do dataset
+                    datas_validas = df_resp[col_final_g].dropna()
+                    if col_criacao_g and col_criacao_g in df_resp.columns:
+                        datas_validas_cria = df_resp[col_criacao_g].dropna()
+                        data_min_resp = min(datas_validas.min(), datas_validas_cria.min()).date() if len(datas_validas) and len(datas_validas_cria) else (datas_validas.min().date() if len(datas_validas) else pd.Timestamp.today().date())
+                    else:
+                        data_min_resp = datas_validas.min().date() if len(datas_validas) else pd.Timestamp.today().date()
+                    data_max_resp = pd.Timestamp.today().date()
+
+                    with col_f1:
+                        resp_inicio = st.date_input("Data Inicial", value=data_min_resp, key="perf_resp_inicio")
+                    with col_f2:
+                        resp_fim = st.date_input("Data Final", value=data_max_resp, key="perf_resp_fim")
+
+                    # Lista de responsáveis ordenada
+                    lista_responsaveis = sorted(df_resp[col_responsavel_g].dropna().astype(str).str.strip().unique().tolist())
+                    with col_f3:
+                        resp_selecionados = st.multiselect(
+                            "Responsável(is)",
+                            options=lista_responsaveis,
+                            default=[],
+                            placeholder="Todos os responsáveis",
+                            key="perf_resp_select"
+                        )
+
+                    # ── Aplicar filtro de datas ────────────────────────────
+                    # Filtra por data de finalização OU criação no período
+                    mask_periodo = pd.Series([False] * len(df_resp), index=df_resp.index)
+                    if col_criacao_g and col_criacao_g in df_resp.columns:
+                        mask_periodo |= (
+                            (df_resp[col_criacao_g].dt.date >= resp_inicio) &
+                            (df_resp[col_criacao_g].dt.date <= resp_fim)
+                        )
+                    mask_fin = df_resp[col_final_g].notna() & (
+                        (df_resp[col_final_g].dt.date >= resp_inicio) &
+                        (df_resp[col_final_g].dt.date <= resp_fim)
+                    )
+                    mask_periodo |= mask_fin
+                    df_periodo = df_resp[mask_periodo].copy()
+
+                    # Filtro por responsável selecionado
+                    if resp_selecionados:
+                        df_periodo = df_periodo[df_periodo[col_responsavel_g].astype(str).str.strip().isin(resp_selecionados)]
+
+                    if len(df_periodo) == 0:
+                        st.info("Nenhuma OS encontrada para os filtros selecionados.")
+                    else:
+                        # ── Gráfico 1: Visão geral por responsável ─────────
+                        finalizadas_no_periodo = df_periodo[
+                            df_periodo[col_final_g].notna() &
+                            (df_periodo[col_final_g].dt.date >= resp_inicio) &
+                            (df_periodo[col_final_g].dt.date <= resp_fim)
+                        ]
+                        total_resp  = df_periodo.groupby(col_responsavel_g).size().reset_index(name="Total")
+                        fin_resp    = finalizadas_no_periodo.groupby(col_responsavel_g).size().reset_index(name="Finalizadas")
+                        perf        = total_resp.merge(fin_resp, on=col_responsavel_g, how="left").fillna(0)
+                        perf["Finalizadas"] = perf["Finalizadas"].astype(int)
+                        perf["Em Aberto"]   = perf["Total"] - perf["Finalizadas"]
+                        perf["Taxa (%)"]    = (perf["Finalizadas"] / perf["Total"] * 100).round(1)
+                        perf = perf.sort_values("Finalizadas", ascending=False).head(20)
+
+                        responsaveis_list = perf[col_responsavel_g].tolist()
+                        finalizadas_list  = perf["Finalizadas"].tolist()
+                        aberto_list       = perf["Em Aberto"].tolist()
+                        taxa_list         = perf["Taxa (%)"].tolist()
+
+                        components.html(f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head>
 <body style="margin:0;padding:0;background:transparent;font-family:'Inter',sans-serif;">
 <div style="padding:8px 0 0 0;">
   <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:10px;font-size:12px;color:#666;justify-content:center;">
-    <span><span style="width:10px;height:10px;border-radius:2px;background:#6dbf8b;display:inline-block;"></span> Finalizadas</span>
+    <span><span style="width:10px;height:10px;border-radius:2px;background:#6dbf8b;display:inline-block;"></span> Finalizadas no período</span>
     <span><span style="width:10px;height:10px;border-radius:2px;background:#e8a0a0;display:inline-block;"></span> Em Aberto</span>
     <span><span style="width:20px;height:2px;background:#444;display:inline-block;vertical-align:middle;"></span> Taxa de Conclusão (%)</span>
   </div>
@@ -2088,6 +2147,90 @@ function syncLineResp(){{
   }});
 }}
 </script></body></html>""", height=420)
+
+                        # ── Gráfico 2: Atividade diária do(s) responsável(is) selecionado(s) ──
+                        if resp_selecionados and col_criacao_g and col_criacao_g in df_resp.columns:
+                            for nome_resp in resp_selecionados:
+                                df_um = df_periodo[df_periodo[col_responsavel_g].astype(str).str.strip() == nome_resp].copy()
+                                if len(df_um) == 0:
+                                    continue
+
+                                dias_range = pd.date_range(resp_inicio, resp_fim, freq="D")
+                                labels_d, total_dia_list, fin_dia_list = [], [], []
+
+                                for dia in dias_range:
+                                    # Total de OS que existiam no dia (criadas até aquele dia e não finalizadas antes dele)
+                                    criadas_ate = df_um[df_um[col_criacao_g].dt.normalize() <= dia]
+                                    finalizadas_antes = criadas_ate[
+                                        criadas_ate[col_final_g].notna() &
+                                        (criadas_ate[col_final_g].dt.normalize() < dia)
+                                    ]
+                                    total_no_dia = len(criadas_ate) - len(finalizadas_antes)
+
+                                    # Finalizadas neste dia
+                                    fin_no_dia = df_um[
+                                        df_um[col_final_g].notna() &
+                                        (df_um[col_final_g].dt.normalize() == dia)
+                                    ].shape[0]
+
+                                    labels_d.append(dia.strftime("%d/%m"))
+                                    total_dia_list.append(int(total_no_dia))
+                                    fin_dia_list.append(int(fin_no_dia))
+
+                                # Remove dias completamente zerados das bordas
+                                df_diario = pd.DataFrame({"label": labels_d, "total": total_dia_list, "fin": fin_dia_list})
+                                primeiro = df_diario[(df_diario["total"] > 0) | (df_diario["fin"] > 0)].index.min()
+                                if pd.notna(primeiro):
+                                    df_diario = df_diario.loc[primeiro:]
+
+                                labels_d       = df_diario["label"].tolist()
+                                total_dia_list = df_diario["total"].tolist()
+                                fin_dia_list   = df_diario["fin"].tolist()
+
+                                st.markdown(f'<div class="section-title">📅 Atividade Diária — {nome_resp}</div>', unsafe_allow_html=True)
+                                components.html(f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:transparent;font-family:'Inter',sans-serif;">
+<div style="padding:8px 0 0 0;">
+  <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:10px;font-size:12px;color:#666;justify-content:center;">
+    <span><span style="width:10px;height:10px;border-radius:2px;background:#5b8dd9;display:inline-block;"></span> OS no Dia (carteira)</span>
+    <span><span style="width:10px;height:10px;border-radius:2px;background:#6dbf8b;display:inline-block;"></span> Finalizadas no Dia</span>
+  </div>
+  <div style="position:relative;width:100%;height:300px;"><canvas id="diarioResp_{nome_resp.replace(' ','_').replace('/','_')}"></canvas></div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const labels={labels_d};
+const total={total_dia_list};
+const fin={fin_dia_list};
+new Chart(document.getElementById('diarioResp_{nome_resp.replace(' ','_').replace('/','_')}').getContext('2d'),{{
+  type:'bar',
+  data:{{labels,datasets:[
+    {{label:'OS no Dia',data:total,backgroundColor:'#5b8dd9',barPercentage:0.6,categoryPercentage:0.7}},
+    {{label:'Finalizadas',data:fin,backgroundColor:'#6dbf8b',barPercentage:0.6,categoryPercentage:0.7}}
+  ]}},
+  options:{{
+    responsive:true,maintainAspectRatio:false,
+    plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{label:ctx=>` ${{ctx.dataset.label}}: ${{ctx.parsed.y}}`}}}}}},
+    scales:{{
+      x:{{grid:{{display:false}},ticks:{{font:{{size:11}},color:'#888780',maxRotation:35,minRotation:25}},border:{{display:false}}}},
+      y:{{beginAtZero:true,ticks:{{stepSize:1,font:{{size:11}},color:'#888780'}},grid:{{color:'rgba(136,135,128,0.15)'}},border:{{display:false}}}}
+    }}
+  }},
+  plugins:[{{id:'lblDiario',afterDatasetsDraw(chart){{
+    const ctx2=chart.ctx;
+    chart.data.datasets.forEach((_,di)=>{{
+      chart.getDatasetMeta(di).data.forEach((bar,i)=>{{
+        const val=chart.data.datasets[di].data[i];
+        if(val===0)return;
+        ctx2.save();ctx2.font='600 10px Inter,sans-serif';
+        ctx2.fillStyle='#fff';ctx2.textAlign='center';ctx2.textBaseline='middle';
+        ctx2.fillText(val,bar.x,bar.y+bar.height/2);ctx2.restore();
+      }});
+    }});
+  }}}}]
+}});
+</script></body></html>""", height=360)
+
         except Exception as erro_resp:
             st.warning(f"Erro ao gerar gráfico de performance por responsável: {erro_resp}")
 
