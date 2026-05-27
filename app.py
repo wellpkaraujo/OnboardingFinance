@@ -1657,6 +1657,16 @@ elif pagina == "🔧 Ordens de Serviço":
             tab_mes["Dentro_pct"]=(tab_mes["Dentro"]/tab_mes["Finalizadas"]*100).round(0).astype(int)
             tab_mes["Fora_pct"]=(tab_mes["Fora"]/tab_mes["Finalizadas"]*100).round(0).astype(int)
             tab_mes["Mês"]=tab_mes["Mes"].apply(lambda m:mes_abrev(str(m)))
+            # Recebidas por mês e saldo
+            df_full=st.session_state.dados_os["df"]
+            df_full["Mes_Rec"]=df_full["Criação do Ticket"].dt.to_period("M")
+            rec_mes=df_full.groupby("Mes_Rec").size().reset_index(name="Recebidas")
+            rec_mes["Mes_str"]=rec_mes["Mes_Rec"].astype(str)
+            tab_mes["Mes_str"]=tab_mes["Mes"].astype(str)
+            tab_mes=tab_mes.merge(rec_mes[["Mes_str","Recebidas"]],on="Mes_str",how="left")
+            tab_mes["Recebidas"]=tab_mes["Recebidas"].fillna(0).astype(int)
+            tab_mes["Saldo"]=tab_mes["Recebidas"]-tab_mes["Finalizadas"]
+            tab_mes=tab_mes.drop(columns=["Mes_str"],errors="ignore")
             st.session_state.tab_mes_graficos=tab_mes
             st.markdown(estilizar_tab_mes(tab_mes), unsafe_allow_html=True)
             with st.spinner("Salvando..."):
@@ -1766,6 +1776,55 @@ function syncLine(){{
   }});
 }}
 </script></body></html>""", height=380)
+
+        # ── Gráfico: Recebidas × Finalizadas × Saldo ─────────────────────────────
+        if "Recebidas" in tab_mes.columns:
+            rec_list=tab_mes["Recebidas"].tolist()
+            fin_list=tab_mes["Finalizadas"].tolist()
+            sal_list=tab_mes["Saldo"].tolist()
+            st.markdown('<div class="section-title">OS por Mês — Recebidas × Finalizadas × Saldo</div>', unsafe_allow_html=True)
+            components.html(f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:transparent;font-family:'Inter',sans-serif;">
+<div style="padding:8px 0 0 0;">
+  <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:10px;font-size:12px;color:#666;justify-content:center;">
+    <span><span style="width:10px;height:10px;border-radius:2px;background:#5b8dd9;display:inline-block;"></span> Recebidas</span>
+    <span><span style="width:10px;height:10px;border-radius:2px;background:#6dbf8b;display:inline-block;"></span> Finalizadas</span>
+    <span><span style="width:10px;height:10px;border-radius:2px;background:#e8a0a0;display:inline-block;"></span> Saldo (não finalizado)</span>
+  </div>
+  <div style="position:relative;width:100%;height:320px;"><canvas id="rfChart"></canvas></div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const labels={labels};const rec={rec_list};const fin={fin_list};const sal={sal_list};
+new Chart(document.getElementById('rfChart').getContext('2d'),{{
+  type:'bar',
+  data:{{labels,datasets:[
+    {{label:'Recebidas',data:rec,backgroundColor:'#5b8dd9',barPercentage:0.6,categoryPercentage:0.7}},
+    {{label:'Finalizadas',data:fin,backgroundColor:'#6dbf8b',barPercentage:0.6,categoryPercentage:0.7}},
+    {{label:'Saldo',data:sal,backgroundColor:'#e8a0a0',barPercentage:0.6,categoryPercentage:0.7}}
+  ]}},
+  options:{{
+    responsive:true,maintainAspectRatio:false,
+    plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{label:ctx=>` ${{ctx.dataset.label}}: ${{ctx.parsed.y}}`}}}}}},
+    scales:{{
+      x:{{grid:{{display:false}},ticks:{{font:{{size:12}},color:'#888780'}},border:{{display:false}}}},
+      y:{{beginAtZero:true,ticks:{{stepSize:1,font:{{size:11}},color:'#888780'}},grid:{{color:'rgba(136,135,128,0.15)'}},border:{{display:false}}}}
+    }}
+  }},
+  plugins:[{{id:'barLabels',afterDatasetsDraw(chart){{
+    const ctx2=chart.ctx;
+    chart.data.datasets.forEach((_,di)=>{{
+      chart.getDatasetMeta(di).data.forEach((bar,i)=>{{
+        const val=chart.data.datasets[di].data[i];
+        if(val===0)return;
+        ctx2.save();ctx2.font='600 11px Inter,sans-serif';
+        ctx2.fillStyle='#fff';ctx2.textAlign='center';ctx2.textBaseline='middle';
+        ctx2.fillText(val,bar.x,bar.y+bar.height/2);ctx2.restore();
+      }});
+    }});
+  }}}}]
+}});
+</script></body></html>""", height=360)
 
 elif pagina == "📄 Status Atual — OS":
     st.markdown('<div class="section-title">📄 Status Atual — OS</div>', unsafe_allow_html=True)
