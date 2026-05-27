@@ -1785,7 +1785,172 @@ function syncLine(){{
 }}
 </script></body></html>""", height=380)
 
-        # ── Gráfico: Recebidas × Finalizadas × Saldo ─────────────────────────────
+        
+
+        # ── NOVO GRÁFICO: Fluxo Diário Operacional de OS ──────────────────────
+        try:
+            dados_os = st.session_state.get("dados_os")
+
+            if dados_os:
+                df_fluxo = dados_os["df"].copy()
+
+                col_criacao = dados_os.get("col_criacao")
+                col_finalizacao = dados_os.get("col_final")
+
+                if col_criacao and col_criacao in df_fluxo.columns:
+
+                    df_fluxo[col_criacao] = pd.to_datetime(
+                        df_fluxo[col_criacao],
+                        errors="coerce",
+                        dayfirst=True
+                    )
+
+                    if col_finalizacao and col_finalizacao in df_fluxo.columns:
+                        df_fluxo[col_finalizacao] = pd.to_datetime(
+                            df_fluxo[col_finalizacao],
+                            errors="coerce",
+                            dayfirst=True
+                        )
+
+                    data_inicio = df_fluxo[col_criacao].min().normalize()
+                    data_fim = pd.Timestamp.today().normalize()
+
+                    dias = pd.date_range(data_inicio, data_fim, freq="D")
+
+                    abertura_lista = []
+                    entrantes_lista = []
+                    encerradas_lista = []
+                    saldo_lista = []
+                    labels_dias = []
+
+                    saldo_anterior = 0
+
+                    for dia in dias:
+
+                        entrantes = df_fluxo[
+                            df_fluxo[col_criacao].dt.normalize() == dia
+                        ].shape[0]
+
+                        encerradas = 0
+
+                        if col_finalizacao and col_finalizacao in df_fluxo.columns:
+                            encerradas = df_fluxo[
+                                df_fluxo[col_finalizacao].dt.normalize() == dia
+                            ].shape[0]
+
+                        abertura = saldo_anterior
+                        saldo_final = abertura + entrantes - encerradas
+
+                        labels_dias.append(dia.strftime("%d/%m"))
+                        abertura_lista.append(int(abertura))
+                        entrantes_lista.append(int(entrantes))
+                        encerradas_lista.append(int(encerradas))
+                        saldo_lista.append(int(saldo_final))
+
+                        saldo_anterior = saldo_final
+
+                    st.markdown(
+                        '<div class="section-title">Fluxo Diário Operacional de OS</div>',
+                        unsafe_allow_html=True
+                    )
+
+                    components.html(f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+</head>
+
+<body style="margin:0;padding:0;background:transparent;font-family:'Inter',sans-serif;">
+
+<div style="padding:8px 0 0 0;">
+
+<div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:10px;font-size:12px;color:#666;justify-content:center;">
+<span><span style="width:10px;height:10px;border-radius:2px;background:#7c8cf8;display:inline-block;"></span> Abertura do Dia</span>
+<span><span style="width:10px;height:10px;border-radius:2px;background:#5b8dd9;display:inline-block;"></span> Entrantes</span>
+<span><span style="width:10px;height:10px;border-radius:2px;background:#6dbf8b;display:inline-block;"></span> Encerradas</span>
+<span><span style="width:10px;height:10px;border-radius:2px;background:#e8a0a0;display:inline-block;"></span> Saldo Final</span>
+</div>
+
+<div style="position:relative;width:100%;height:360px;">
+<canvas id="fluxoDiarioOS"></canvas>
+</div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+
+<script>
+
+const labels = {labels_dias};
+
+const abertura = {abertura_lista};
+const entrantes = {entrantes_lista};
+const encerradas = {encerradas_lista};
+const saldo = {saldo_lista};
+
+new Chart(document.getElementById('fluxoDiarioOS').getContext('2d'), {{
+    type: 'bar',
+
+    data: {{
+        labels: labels,
+
+        datasets: [
+            {{
+                label: 'Abertura',
+                data: abertura,
+                backgroundColor: '#7c8cf8'
+            }},
+            {{
+                label: 'Entrantes',
+                data: entrantes,
+                backgroundColor: '#5b8dd9'
+            }},
+            {{
+                label: 'Encerradas',
+                data: encerradas,
+                backgroundColor: '#6dbf8b'
+            }},
+            {{
+                label: 'Saldo',
+                data: saldo,
+                backgroundColor: '#e8a0a0'
+            }}
+        ]
+    }},
+
+    options: {{
+        responsive: true,
+        maintainAspectRatio: false,
+
+        plugins: {{
+            legend: {{
+                position: 'top'
+            }}
+        }},
+
+        scales: {{
+            x: {{
+                grid: {{
+                    display: false
+                }}
+            }},
+            y: {{
+                beginAtZero: true
+            }}
+        }}
+    }}
+}});
+
+</script>
+</body>
+</html>
+                    """, height=420)
+
+        except Exception as erro_fluxo:
+            st.warning(f"Erro ao gerar gráfico diário de OS: {erro_fluxo}")
+
+
+# ── Gráfico: Recebidas × Finalizadas × Saldo ─────────────────────────────
         if "Recebidas" in tab_mes.columns:
             rec_list=tab_mes["Recebidas"].tolist()
             fin_list=tab_mes["Finalizadas"].tolist()
