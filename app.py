@@ -1895,97 +1895,54 @@ function syncLine(){{
                     encerradas_lista = df_grafico["Encerradas"].tolist()
                     saldo_lista = df_grafico["Saldo"].tolist()
 
-                    components.html(f"""<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-</head>
-
+                    components.html(f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head>
 <body style="margin:0;padding:0;background:transparent;font-family:'Inter',sans-serif;">
-
 <div style="padding:8px 0 0 0;">
-
-<div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:10px;font-size:12px;color:#666;justify-content:center;">
-<span><span style="width:10px;height:10px;border-radius:2px;background:#7c8cf8;display:inline-block;"></span> Abertura do Dia</span>
-<span><span style="width:10px;height:10px;border-radius:2px;background:#5b8dd9;display:inline-block;"></span> Entrantes</span>
-<span><span style="width:10px;height:10px;border-radius:2px;background:#6dbf8b;display:inline-block;"></span> Encerradas</span>
-<span><span style="width:10px;height:10px;border-radius:2px;background:#e8a0a0;display:inline-block;"></span> Saldo Final</span>
+  <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:10px;font-size:12px;color:#666;justify-content:center;">
+    <span><span style="width:10px;height:10px;border-radius:2px;background:#7c8cf8;display:inline-block;"></span> Abertura do Dia</span>
+    <span><span style="width:10px;height:10px;border-radius:2px;background:#5b8dd9;display:inline-block;"></span> Entrantes</span>
+    <span><span style="width:10px;height:10px;border-radius:2px;background:#6dbf8b;display:inline-block;"></span> Encerradas</span>
+    <span><span style="width:10px;height:10px;border-radius:2px;background:#e8a0a0;display:inline-block;"></span> Saldo Final</span>
+  </div>
+  <div style="position:relative;width:100%;height:320px;"><canvas id="fluxoDiarioOS"></canvas></div>
 </div>
-
-<div style="position:relative;width:100%;height:360px;">
-<canvas id="fluxoDiarioOS"></canvas>
-</div>
-
-</div>
-
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
-
 <script>
-
-const labels = {labels_dias};
-
-const abertura = {abertura_lista};
-const entrantes = {entrantes_lista};
-const encerradas = {encerradas_lista};
-const saldo = {saldo_lista};
-
-new Chart(document.getElementById('fluxoDiarioOS').getContext('2d'), {{
-    type: 'bar',
-
-    data: {{
-        labels: labels,
-
-        datasets: [
-            {{
-                label: 'Abertura',
-                data: abertura,
-                backgroundColor: '#7c8cf8'
-            }},
-            {{
-                label: 'Entrantes',
-                data: entrantes,
-                backgroundColor: '#5b8dd9'
-            }},
-            {{
-                label: 'Encerradas',
-                data: encerradas,
-                backgroundColor: '#6dbf8b'
-            }},
-            {{
-                label: 'Saldo',
-                data: saldo,
-                backgroundColor: '#e8a0a0'
-            }}
-        ]
-    }},
-
-    options: {{
-        responsive: true,
-        maintainAspectRatio: false,
-
-        plugins: {{
-            legend: {{
-                position: 'top'
-            }}
-        }},
-
-        scales: {{
-            x: {{
-                grid: {{
-                    display: false
-                }}
-            }},
-            y: {{
-                beginAtZero: true
-            }}
-        }}
+const labels={labels_dias};
+const abertura={abertura_lista};
+const entrantes={entrantes_lista};
+const encerradas={encerradas_lista};
+const saldo={saldo_lista};
+new Chart(document.getElementById('fluxoDiarioOS').getContext('2d'),{{
+  type:'bar',
+  data:{{labels,datasets:[
+    {{label:'Abertura do Dia',data:abertura,backgroundColor:'#7c8cf8',barPercentage:0.6,categoryPercentage:0.7}},
+    {{label:'Entrantes',data:entrantes,backgroundColor:'#5b8dd9',barPercentage:0.6,categoryPercentage:0.7}},
+    {{label:'Encerradas',data:encerradas,backgroundColor:'#6dbf8b',barPercentage:0.6,categoryPercentage:0.7}},
+    {{label:'Saldo Final',data:saldo,backgroundColor:'#e8a0a0',barPercentage:0.6,categoryPercentage:0.7}}
+  ]}},
+  options:{{
+    responsive:true,maintainAspectRatio:false,
+    plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{label:ctx=>` ${{ctx.dataset.label}}: ${{ctx.parsed.y}}`}}}}}},
+    scales:{{
+      x:{{grid:{{display:false}},ticks:{{font:{{size:11}},color:'#888780'}},border:{{display:false}}}},
+      y:{{beginAtZero:true,ticks:{{stepSize:1,font:{{size:11}},color:'#888780'}},grid:{{color:'rgba(136,135,128,0.15)'}},border:{{display:false}}}}
     }}
+  }},
+  plugins:[{{id:'barLabels',afterDatasetsDraw(chart){{
+    const ctx2=chart.ctx;
+    chart.data.datasets.forEach((_,di)=>{{
+      chart.getDatasetMeta(di).data.forEach((bar,i)=>{{
+        const val=chart.data.datasets[di].data[i];
+        if(val===0)return;
+        ctx2.save();ctx2.font='600 10px Inter,sans-serif';
+        ctx2.fillStyle='#fff';ctx2.textAlign='center';ctx2.textBaseline='middle';
+        ctx2.fillText(val,bar.x,bar.y+bar.height/2);ctx2.restore();
+      }});
+    }});
+  }}}}]
 }});
-
-</script>
-</body>
-</html>
-                    """, height=420)
+</script></body></html>""", height=360)
 
         except Exception as erro_fluxo:
             st.warning(f"Erro ao gerar gráfico diário de OS: {erro_fluxo}")
@@ -2039,6 +1996,100 @@ new Chart(document.getElementById('rfChart').getContext('2d'),{{
   }}}}]
 }});
 </script></body></html>""", height=360)
+
+# ── Gráfico: Performance por Responsável ─────────────────────────────────
+        try:
+            dados_os_resp = st.session_state.get("dados_os")
+            if dados_os_resp:
+                df_resp = dados_os_resp["df"].copy()
+                col_responsavel_g = dados_os_resp.get("col_responsavel")
+                col_final_g = dados_os_resp.get("col_final")
+                col_status_g = dados_os_resp.get("col_status")
+
+                if col_responsavel_g and col_responsavel_g in df_resp.columns and col_final_g and col_final_g in df_resp.columns:
+                    df_resp[col_final_g] = pd.to_datetime(df_resp[col_final_g], errors="coerce", dayfirst=True)
+
+                    # Considera finalizada qualquer OS com data de finalização preenchida
+                    finalizadas_resp = df_resp[df_resp[col_final_g].notna()].copy()
+                    total_resp = df_resp.groupby(col_responsavel_g).size().reset_index(name="Total")
+                    fin_resp = finalizadas_resp.groupby(col_responsavel_g).size().reset_index(name="Finalizadas")
+                    perf = total_resp.merge(fin_resp, on=col_responsavel_g, how="left").fillna(0)
+                    perf["Finalizadas"] = perf["Finalizadas"].astype(int)
+                    perf["Em Aberto"] = perf["Total"] - perf["Finalizadas"]
+                    perf["Taxa (%)"] = (perf["Finalizadas"] / perf["Total"] * 100).round(1)
+                    perf = perf.sort_values("Finalizadas", ascending=False).head(20)
+                    perf = perf[perf[col_responsavel_g].astype(str).str.strip().str.lower() != "nan"]
+
+                    responsaveis_list = perf[col_responsavel_g].tolist()
+                    finalizadas_list = perf["Finalizadas"].tolist()
+                    aberto_list = perf["Em Aberto"].tolist()
+                    taxa_list = perf["Taxa (%)"].tolist()
+
+                    st.markdown('<div class="section-title">Performance por Responsável — OS Finalizadas</div>', unsafe_allow_html=True)
+                    components.html(f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:transparent;font-family:'Inter',sans-serif;">
+<div style="padding:8px 0 0 0;">
+  <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:10px;font-size:12px;color:#666;justify-content:center;">
+    <span><span style="width:10px;height:10px;border-radius:2px;background:#6dbf8b;display:inline-block;"></span> Finalizadas</span>
+    <span><span style="width:10px;height:10px;border-radius:2px;background:#e8a0a0;display:inline-block;"></span> Em Aberto</span>
+    <span><span style="width:20px;height:2px;background:#444;display:inline-block;vertical-align:middle;"></span> Taxa de Conclusão (%)</span>
+  </div>
+  <div style="position:relative;width:100%;height:80px;"><canvas id="lineRespChart"></canvas></div>
+  <div style="position:relative;width:100%;height:300px;"><canvas id="barRespChart"></canvas></div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const labels={responsaveis_list};
+const fin={finalizadas_list};
+const aberto={aberto_list};
+const taxa={taxa_list};
+let barRespChart,lineRespChart;
+barRespChart=new Chart(document.getElementById('barRespChart').getContext('2d'),{{
+  data:{{labels,datasets:[
+    {{type:'bar',label:'Finalizadas',data:fin,backgroundColor:'#6dbf8b',stack:'resp',barPercentage:0.5,categoryPercentage:0.65}},
+    {{type:'bar',label:'Em Aberto',data:aberto,backgroundColor:'#e8a0a0',stack:'resp',barPercentage:0.5,categoryPercentage:0.65}}
+  ]}},
+  options:{{responsive:true,maintainAspectRatio:false,animation:{{onComplete:syncLineResp}},
+    layout:{{padding:{{left:0,right:0,bottom:4}}}},plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{label:ctx=>` ${{ctx.dataset.label}}: ${{ctx.parsed.y}}`}}}}}},
+    scales:{{
+      x:{{stacked:true,grid:{{display:false}},ticks:{{font:{{size:11}},color:'#888780',maxRotation:35,minRotation:25}},border:{{display:false}}}},
+      y:{{stacked:true,beginAtZero:true,ticks:{{stepSize:1,font:{{size:11}},color:'#888780'}},grid:{{color:'rgba(136,135,128,0.15)'}},border:{{display:false}}}}
+    }}
+  }},
+  plugins:[{{id:'barRespLabels',afterDatasetsDraw(chart){{
+    const ctx2=chart.ctx;
+    chart.getDatasetMeta(0).data.forEach((bar,i)=>{{
+      if(fin[i]===0)return;
+      ctx2.save();ctx2.font='600 10px Inter,sans-serif';ctx2.fillStyle='#fff';ctx2.textAlign='center';ctx2.textBaseline='middle';
+      ctx2.fillText(fin[i],bar.x,bar.y+bar.height/2);ctx2.restore();
+    }});
+    chart.getDatasetMeta(1).data.forEach((bar,i)=>{{
+      if(aberto[i]===0)return;
+      ctx2.save();ctx2.font='600 10px Inter,sans-serif';ctx2.fillStyle='#8b3a3a';ctx2.textAlign='center';ctx2.textBaseline='middle';
+      ctx2.fillText(aberto[i],bar.x,bar.y+bar.height/2);ctx2.restore();
+    }});
+  }}}}]
+}});
+function syncLineResp(){{
+  if(!barRespChart)return;
+  const meta=barRespChart.getDatasetMeta(0);const xPos=meta.data.map(b=>b.x);
+  const lp=xPos[0];const rp=barRespChart.width-xPos[xPos.length-1];
+  if(lineRespChart)lineRespChart.destroy();
+  lineRespChart=new Chart(document.getElementById('lineRespChart').getContext('2d'),{{
+    type:'line',data:{{labels,datasets:[{{data:taxa,borderColor:'#444441',backgroundColor:'#444441',pointBackgroundColor:'#444441',pointRadius:5,pointHoverRadius:7,borderWidth:2,tension:0}}]}},
+    options:{{responsive:true,maintainAspectRatio:false,layout:{{padding:{{top:20,left:lp,right:rp,bottom:4}}}},plugins:{{legend:{{display:false}}}},scales:{{x:{{display:false}},y:{{display:false,min:0,max:110}}}}}},
+    plugins:[{{id:'lineRespLabels',afterDatasetsDraw(chart){{
+      const ctx2=chart.ctx;
+      chart.getDatasetMeta(0).data.forEach((pt,i)=>{{
+        ctx2.save();ctx2.font='500 11px Inter,sans-serif';ctx2.fillStyle='#2c2c2a';ctx2.textAlign='center';
+        ctx2.fillText(taxa[i]+'%',pt.x,pt.y-10);ctx2.restore();
+      }});
+    }}}}]
+  }});
+}}
+</script></body></html>""", height=420)
+        except Exception as erro_resp:
+            st.warning(f"Erro ao gerar gráfico de performance por responsável: {erro_resp}")
 
 elif pagina == "📄 Status Atual — OS":
     st.markdown('<div class="section-title">📄 Status Atual — OS</div>', unsafe_allow_html=True)
