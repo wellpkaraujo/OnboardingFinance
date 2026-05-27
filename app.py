@@ -1657,16 +1657,24 @@ elif pagina == "🔧 Ordens de Serviço":
             tab_mes["Dentro_pct"]=(tab_mes["Dentro"]/tab_mes["Finalizadas"]*100).round(0).astype(int)
             tab_mes["Fora_pct"]=(tab_mes["Fora"]/tab_mes["Finalizadas"]*100).round(0).astype(int)
             tab_mes["Mês"]=tab_mes["Mes"].apply(lambda m:mes_abrev(str(m)))
-            # Recebidas por mês e saldo
-            df_full=st.session_state.dados_os["df"]
-            df_full["Mes_Rec"]=df_full["Criação do Ticket"].dt.to_period("M")
-            rec_mes=df_full.groupby("Mes_Rec").size().reset_index(name="Recebidas")
-            rec_mes["Mes_str"]=rec_mes["Mes_Rec"].astype(str)
-            tab_mes["Mes_str"]=tab_mes["Mes"].astype(str)
-            tab_mes=tab_mes.merge(rec_mes[["Mes_str","Recebidas"]],on="Mes_str",how="left")
-            tab_mes["Recebidas"]=tab_mes["Recebidas"].fillna(0).astype(int)
-            tab_mes["Saldo"]=tab_mes["Recebidas"]-tab_mes["Finalizadas"]
-            tab_mes=tab_mes.drop(columns=["Mes_str"],errors="ignore")
+            # Recebidas por mês e saldo — usa o nome real da coluna de criação
+            _dados_os=st.session_state.dados_os
+            df_full=_dados_os["df"].copy()
+            _col_cria=_dados_os.get("col_criacao") or next(
+                (col for col in df_full.columns if any(kw in str(col).lower() for kw in ["cria","abertura","created"])), None
+            )
+            if _col_cria and _col_cria in df_full.columns:
+                df_full["_Mes_Rec"]=pd.to_datetime(df_full[_col_cria],dayfirst=True,errors="coerce").dt.to_period("M")
+                rec_mes=df_full.groupby("_Mes_Rec").size().reset_index(name="Recebidas")
+                rec_mes["Mes_str"]=rec_mes["_Mes_Rec"].astype(str)
+                tab_mes["Mes_str"]=tab_mes["Mes"].astype(str)
+                tab_mes=tab_mes.merge(rec_mes[["Mes_str","Recebidas"]],on="Mes_str",how="left")
+                tab_mes["Recebidas"]=tab_mes["Recebidas"].fillna(0).astype(int)
+                tab_mes["Saldo"]=tab_mes["Recebidas"]-tab_mes["Finalizadas"]
+                tab_mes=tab_mes.drop(columns=["Mes_str"],errors="ignore")
+            else:
+                tab_mes["Recebidas"]=tab_mes["Finalizadas"]
+                tab_mes["Saldo"]=0
             st.session_state.tab_mes_graficos=tab_mes
             st.markdown(estilizar_tab_mes(tab_mes), unsafe_allow_html=True)
             with st.spinner("Salvando..."):
