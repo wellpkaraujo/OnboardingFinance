@@ -1414,11 +1414,19 @@ elif pagina == "📊 Gráficos — Chamados":
             dp=int(((df_area["Dentro do SLA"]=="Dentro")|(df_area["Dentro do SLA"]=="Sem SLA")).sum())
             pct_sla=round(dp/total*100,1) if total>0 else 0
         else: pct_sla=None
-        c1,c2,c3,c4=st.columns(4)
+
+        # Média mensal de chamados
+        sla_mes=df_area.groupby("Mes").size().reset_index(name="Total_Mes")
+        media_mensal_ch=round(sla_mes["Total_Mes"].mean(),1) if len(sla_mes)>0 else 0
+        meses_com_ch=len(sla_mes)
+        sub_media_ch=f"Média em {meses_com_ch} {'mês' if meses_com_ch==1 else 'meses'}" if meses_com_ch>0 else "—"
+
+        c1,c2,c3,c4,c5=st.columns(5)
         with c1: st.markdown(f'<div class="metric-card"><div class="label">Total de Chamados</div><div class="value">{total}</div><div class="sub">Total no Período</div></div>', unsafe_allow_html=True)
         with c2: st.markdown(f'<div class="metric-card metric-green"><div class="label">Total de Solicitações</div><div class="value">{sol_total}</div><div class="sub">{round(sol_total/total*100,1) if total>0 else 0}% do total</div></div>', unsafe_allow_html=True)
         with c3: st.markdown(f'<div class="metric-card metric-red"><div class="label">Total de Incidentes</div><div class="value">{inc}</div><div class="sub">{round(inc/total*100,1) if total>0 else 0}% do total</div></div>', unsafe_allow_html=True)
-        with c4:
+        with c4: st.markdown(f'<div class="metric-card"><div class="label">Média / Mês</div><div class="value">{media_mensal_ch}</div><div class="sub">{sub_media_ch}</div></div>', unsafe_allow_html=True)
+        with c5:
             if pct_sla is not None:
                 cor="metric-green" if pct_sla>=90 else "metric-orange" if pct_sla>=70 else "metric-red"
                 st.markdown(f'<div class="metric-card {cor}"><div class="label">Dentro do SLA</div><div class="value">{pct_sla}%</div><div class="sub">Dos Chamados no Período</div></div>', unsafe_allow_html=True)
@@ -1538,6 +1546,240 @@ new Chart(document.getElementById('{cid}').getContext('2d'),{{
         grafico_motivos_mes(df_inc_all,f"Top 3 Motivos de Incidentes — Período Completo")
         grafico_motivos_mes(df_sol_ma,f"Top 3 Motivos de Solicitações — {mal}")
         grafico_motivos_mes(df_inc_ma,f"Top 3 Motivos de Incidentes — {mal}")
+
+        # ── Fluxo Diário Operacional de Chamados ──────────────────────
+        try:
+            if "Criação do Ticket" in df_area.columns:
+                df_fluxo_ch = df_area.copy()
+                df_fluxo_ch["Criação do Ticket"] = pd.to_datetime(df_fluxo_ch["Criação do Ticket"], errors="coerce", dayfirst=True)
+                data_ini_ch = df_fluxo_ch["Criação do Ticket"].min().normalize()
+                data_fim_ch = pd.Timestamp.today().normalize()
+                dias_ch = pd.date_range(data_ini_ch, data_fim_ch, freq="D")
+
+                ent_ch_l, labels_ch = [], []
+                for dia in dias_ch:
+                    ent = df_fluxo_ch[df_fluxo_ch["Criação do Ticket"].dt.normalize()==dia].shape[0]
+                    ent_ch_l.append(int(ent))
+                    labels_ch.append(dia.strftime("%d/%m"))
+
+                st.markdown('<div class="section-title">Fluxo Diário de Abertura de Chamados</div>', unsafe_allow_html=True)
+                col_fd1, col_fd2 = st.columns(2)
+                with col_fd1:
+                    fd_inicio = st.date_input("Data Inicial", value=data_ini_ch.date(), format="DD/MM/YYYY", key=f"fluxo_ch_{label_area}_ini")
+                with col_fd2:
+                    fd_fim = st.date_input("Data Final", value=data_fim_ch.date(), format="DD/MM/YYYY", key=f"fluxo_ch_{label_area}_fim")
+
+                df_fd = pd.DataFrame({"Data": pd.to_datetime(labels_ch, format="%d/%m").map(lambda x: x.replace(year=pd.Timestamp.today().year)), "Entrantes": ent_ch_l})
+                df_fd = df_fd[(df_fd["Data"].dt.date >= fd_inicio) & (df_fd["Data"].dt.date <= fd_fim)]
+                labels_fd = df_fd["Data"].dt.strftime("%d/%m").tolist()
+                ent_fd = df_fd["Entrantes"].tolist()
+
+                components.html(f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:transparent;font-family:'Inter',sans-serif;">
+<div style="padding:8px 0 0 0;">
+  <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:10px;font-size:12px;color:#666;justify-content:center;">
+    <span><span style="width:10px;height:10px;border-radius:2px;background:#5b8dd9;display:inline-block;"></span> Chamados Abertos no Dia</span>
+  </div>
+  <div style="position:relative;width:100%;height:300px;"><canvas id="fluxoDiarioCh_{label_area}"></canvas></div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const labels={labels_fd};
+const ent={ent_fd};
+new Chart(document.getElementById('fluxoDiarioCh_{label_area}').getContext('2d'),{{
+  type:'bar',
+  data:{{labels,datasets:[
+    {{label:'Chamados Abertos',data:ent,backgroundColor:'#5b8dd9',barPercentage:0.6,categoryPercentage:0.7}}
+  ]}},
+  options:{{
+    responsive:true,maintainAspectRatio:false,
+    plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{label:ctx=>` Abertos: ${{ctx.parsed.y}}`}}}}}},
+    scales:{{
+      x:{{grid:{{display:false}},ticks:{{font:{{size:11}},color:'#888780',maxRotation:35,minRotation:25}},border:{{display:false}}}},
+      y:{{beginAtZero:true,ticks:{{stepSize:1,font:{{size:11}},color:'#888780'}},grid:{{color:'rgba(136,135,128,0.15)'}},border:{{display:false}}}}
+    }}
+  }},
+  plugins:[{{id:'lblFluxoCh',afterDatasetsDraw(chart){{
+    const ctx2=chart.ctx;
+    chart.getDatasetMeta(0).data.forEach((bar,i)=>{{
+      if(ent[i]===0)return;
+      ctx2.save();ctx2.font='600 10px Inter,sans-serif';ctx2.fillStyle='#fff';
+      ctx2.textAlign='center';ctx2.textBaseline='middle';
+      ctx2.fillText(ent[i],bar.x,bar.y+bar.height/2);ctx2.restore();
+    }});
+  }}}}]
+}});
+</script></body></html>""", height=340)
+        except Exception as e_fd:
+            st.warning(f"Erro ao gerar fluxo diário de chamados: {e_fd}")
+
+        # ── Performance por Responsável — Chamados ────────────────────
+        try:
+            col_resp_ch = "Criado por" if "Criado por" in df_area.columns else None
+            if col_resp_ch and "Criação do Ticket" in df_area.columns:
+                df_rch = df_area.copy()
+                df_rch["Criação do Ticket"] = pd.to_datetime(df_rch["Criação do Ticket"], errors="coerce", dayfirst=True)
+                df_rch = df_rch[df_rch[col_resp_ch].astype(str).str.strip().str.lower() != "nan"]
+
+                st.markdown('<div class="section-title">Performance por Responsável — Chamados</div>', unsafe_allow_html=True)
+
+                data_min_rch = df_rch["Criação do Ticket"].min().date()
+                data_max_rch = pd.Timestamp.today().date()
+
+                col_rf1, col_rf2, col_rf3 = st.columns([1,1,2])
+                with col_rf1:
+                    rch_ini = st.date_input("Data Inicial", value=data_min_rch, format="DD/MM/YYYY", key=f"perf_ch_{label_area}_ini")
+                with col_rf2:
+                    rch_fim = st.date_input("Data Final", value=data_max_rch, format="DD/MM/YYYY", key=f"perf_ch_{label_area}_fim")
+
+                lista_resp_ch = sorted(df_rch[col_resp_ch].dropna().astype(str).str.strip().unique().tolist())
+                with col_rf3:
+                    resp_ch_sel = st.multiselect("Responsável(is)", options=lista_resp_ch, default=[], placeholder="Todos os responsáveis", key=f"perf_ch_{label_area}_sel")
+
+                # Filtro de período
+                df_rch_p = df_rch[(df_rch["Criação do Ticket"].dt.date >= rch_ini) & (df_rch["Criação do Ticket"].dt.date <= rch_fim)].copy()
+                if resp_ch_sel:
+                    df_rch_p = df_rch_p[df_rch_p[col_resp_ch].astype(str).str.strip().isin(resp_ch_sel)]
+
+                if len(df_rch_p) == 0:
+                    st.info("Nenhum chamado encontrado para os filtros selecionados.")
+                else:
+                    # Gráfico geral: total de chamados por responsável
+                    tot_resp = df_rch_p.groupby(col_resp_ch).size().reset_index(name="Total")
+                    if tem_sla:
+                        inc_resp = df_rch_p[df_rch_p["Tipo"]=="Incidente"].groupby(col_resp_ch).size().reset_index(name="Incidentes")
+                        sol_resp = df_rch_p[df_rch_p["Tipo"].isin(["Solicitação","Melhoria - Solicitação de Melhoria"])].groupby(col_resp_ch).size().reset_index(name="Solicitações")
+                        perf_ch = tot_resp.merge(inc_resp, on=col_resp_ch, how="left").merge(sol_resp, on=col_resp_ch, how="left").fillna(0)
+                        perf_ch["Incidentes"] = perf_ch["Incidentes"].astype(int)
+                        perf_ch["Solicitações"] = perf_ch["Solicitações"].astype(int)
+                    else:
+                        perf_ch = tot_resp.copy()
+                        perf_ch["Incidentes"] = 0
+                        perf_ch["Solicitações"] = perf_ch["Total"]
+                    perf_ch["Pct Inc (%)"] = (perf_ch["Incidentes"] / perf_ch["Total"] * 100).round(1)
+                    perf_ch = perf_ch.sort_values("Total", ascending=False).head(20)
+
+                    resp_ch_list   = perf_ch[col_resp_ch].tolist()
+                    inc_ch_list    = perf_ch["Incidentes"].tolist()
+                    sol_ch_list    = perf_ch["Solicitações"].tolist()
+                    pct_inc_list   = perf_ch["Pct Inc (%)"].tolist()
+
+                    components.html(f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:transparent;font-family:'Inter',sans-serif;">
+<div style="padding:8px 0 0 0;">
+  <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:10px;font-size:12px;color:#666;justify-content:center;">
+    <span><span style="width:10px;height:10px;border-radius:2px;background:#5b8dd9;display:inline-block;"></span> Solicitações</span>
+    <span><span style="width:10px;height:10px;border-radius:2px;background:#e8a0a0;display:inline-block;"></span> Incidentes</span>
+    <span><span style="width:20px;height:2px;background:#444;display:inline-block;vertical-align:middle;"></span> % Incidentes</span>
+  </div>
+  <div style="position:relative;width:100%;height:80px;"><canvas id="lineChResp_{label_area}"></canvas></div>
+  <div style="position:relative;width:100%;height:300px;"><canvas id="barChResp_{label_area}"></canvas></div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const labels={_json.dumps(resp_ch_list)};
+const sol={sol_ch_list};const inc={inc_ch_list};const pctinc={pct_inc_list};
+let barChResp,lineChResp;
+barChResp=new Chart(document.getElementById('barChResp_{label_area}').getContext('2d'),{{
+  data:{{labels,datasets:[
+    {{type:'bar',label:'Solicitações',data:sol,backgroundColor:'#5b8dd9',stack:'rch',barPercentage:0.5,categoryPercentage:0.65}},
+    {{type:'bar',label:'Incidentes',data:inc,backgroundColor:'#e8a0a0',stack:'rch',barPercentage:0.5,categoryPercentage:0.65}}
+  ]}},
+  options:{{responsive:true,maintainAspectRatio:false,animation:{{onComplete:syncLineChResp}},
+    layout:{{padding:{{left:0,right:0,bottom:4}}}},plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{label:ctx=>` ${{ctx.dataset.label}}: ${{ctx.parsed.y}}`}}}}}},
+    scales:{{
+      x:{{stacked:true,grid:{{display:false}},ticks:{{font:{{size:11}},color:'#888780',maxRotation:35,minRotation:25}},border:{{display:false}}}},
+      y:{{stacked:true,beginAtZero:true,ticks:{{stepSize:1,font:{{size:11}},color:'#888780'}},grid:{{color:'rgba(136,135,128,0.15)'}},border:{{display:false}}}}
+    }}
+  }},
+  plugins:[{{id:'barRchLabels',afterDatasetsDraw(chart){{
+    const ctx2=chart.ctx;
+    chart.getDatasetMeta(0).data.forEach((bar,i)=>{{if(sol[i]===0)return;ctx2.save();ctx2.font='600 10px Inter,sans-serif';ctx2.fillStyle='#fff';ctx2.textAlign='center';ctx2.textBaseline='middle';ctx2.fillText(sol[i],bar.x,bar.y+bar.height/2);ctx2.restore();}});
+    chart.getDatasetMeta(1).data.forEach((bar,i)=>{{if(inc[i]===0)return;ctx2.save();ctx2.font='600 10px Inter,sans-serif';ctx2.fillStyle='#8b3a3a';ctx2.textAlign='center';ctx2.textBaseline='middle';ctx2.fillText(inc[i],bar.x,bar.y+bar.height/2);ctx2.restore();}});
+  }}}}]
+}});
+function syncLineChResp(){{
+  if(!barChResp)return;
+  const meta=barChResp.getDatasetMeta(0);const xPos=meta.data.map(b=>b.x);
+  const lp=xPos[0];const rp=barChResp.width-xPos[xPos.length-1];
+  if(lineChResp)lineChResp.destroy();
+  lineChResp=new Chart(document.getElementById('lineChResp_{label_area}').getContext('2d'),{{
+    type:'line',data:{{labels,datasets:[{{data:pctinc,borderColor:'#444441',backgroundColor:'#444441',pointBackgroundColor:'#444441',pointRadius:5,pointHoverRadius:7,borderWidth:2,tension:0}}]}},
+    options:{{responsive:true,maintainAspectRatio:false,layout:{{padding:{{top:20,left:lp,right:rp,bottom:4}}}},plugins:{{legend:{{display:false}}}},scales:{{x:{{display:false}},y:{{display:false,min:0,max:110}}}}}},
+    plugins:[{{id:'lineRchLabels',afterDatasetsDraw(chart){{
+      const ctx2=chart.ctx;chart.getDatasetMeta(0).data.forEach((pt,i)=>{{ctx2.save();ctx2.font='500 11px Inter,sans-serif';ctx2.fillStyle='#2c2c2a';ctx2.textAlign='center';ctx2.fillText(pctinc[i]+'%',pt.x,pt.y-10);ctx2.restore();}});
+    }}}}]
+  }});
+}}
+</script></body></html>""", height=420)
+
+                    # Gráfico diário por responsável selecionado
+                    if resp_ch_sel:
+                        for nome_rch in resp_ch_sel:
+                            df_um_ch = df_rch_p[df_rch_p[col_resp_ch].astype(str).str.strip()==nome_rch].copy()
+                            if len(df_um_ch)==0: continue
+                            dias_rch = pd.date_range(rch_ini, rch_fim, freq="D")
+                            labels_dch, total_dch, inc_dch = [], [], []
+                            for dia in dias_rch:
+                                t = df_um_ch[df_um_ch["Criação do Ticket"].dt.normalize()==dia].shape[0]
+                                i2 = df_um_ch[(df_um_ch["Criação do Ticket"].dt.normalize()==dia) & (df_um_ch["Tipo"]=="Incidente")].shape[0]
+                                labels_dch.append(dia.strftime("%d/%m"))
+                                total_dch.append(int(t))
+                                inc_dch.append(int(i2))
+
+                            # Remove dias zerados das bordas
+                            df_dch = pd.DataFrame({"label":labels_dch,"total":total_dch,"inc":inc_dch})
+                            primeiro_dch = df_dch[df_dch["total"]>0].index.min()
+                            if pd.notna(primeiro_dch):
+                                df_dch = df_dch.loc[primeiro_dch:]
+                            labels_dch = df_dch["label"].tolist()
+                            total_dch  = df_dch["total"].tolist()
+                            inc_dch    = df_dch["inc"].tolist()
+                            sol_dch    = [t-i for t,i in zip(total_dch,inc_dch)]
+
+                            st.markdown(f'<div class="section-title">📅 Atividade Diária — {nome_rch}</div>', unsafe_allow_html=True)
+                            cid_dch = f"diarioCh_{label_area}_{nome_rch.replace(' ','_').replace('/','_')}"
+                            components.html(f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:transparent;font-family:'Inter',sans-serif;">
+<div style="padding:8px 0 0 0;">
+  <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:10px;font-size:12px;color:#666;justify-content:center;">
+    <span><span style="width:10px;height:10px;border-radius:2px;background:#5b8dd9;display:inline-block;"></span> Solicitações no Dia</span>
+    <span><span style="width:10px;height:10px;border-radius:2px;background:#e8a0a0;display:inline-block;"></span> Incidentes no Dia</span>
+  </div>
+  <div style="position:relative;width:100%;height:300px;"><canvas id="{cid_dch}"></canvas></div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const labels={labels_dch};const sol={sol_dch};const inc={inc_dch};
+new Chart(document.getElementById('{cid_dch}').getContext('2d'),{{
+  type:'bar',
+  data:{{labels,datasets:[
+    {{label:'Solicitações',data:sol,backgroundColor:'#5b8dd9',stack:'d',barPercentage:0.6,categoryPercentage:0.7}},
+    {{label:'Incidentes',data:inc,backgroundColor:'#e8a0a0',stack:'d',barPercentage:0.6,categoryPercentage:0.7}}
+  ]}},
+  options:{{
+    responsive:true,maintainAspectRatio:false,
+    plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{label:ctx=>` ${{ctx.dataset.label}}: ${{ctx.parsed.y}}`}}}}}},
+    scales:{{
+      x:{{stacked:true,grid:{{display:false}},ticks:{{font:{{size:11}},color:'#888780',maxRotation:35,minRotation:25}},border:{{display:false}}}},
+      y:{{stacked:true,beginAtZero:true,ticks:{{stepSize:1,font:{{size:11}},color:'#888780'}},grid:{{color:'rgba(136,135,128,0.15)'}},border:{{display:false}}}}
+    }}
+  }},
+  plugins:[{{id:'lblDch',afterDatasetsDraw(chart){{
+    const ctx2=chart.ctx;
+    chart.data.datasets.forEach((_,di)=>{{
+      chart.getDatasetMeta(di).data.forEach((bar,i)=>{{
+        const val=chart.data.datasets[di].data[i];if(val===0)return;
+        ctx2.save();ctx2.font='600 10px Inter,sans-serif';
+        ctx2.fillStyle=di===0?'#fff':'#8b3a3a';ctx2.textAlign='center';ctx2.textBaseline='middle';
+        ctx2.fillText(val,bar.x,bar.y+bar.height/2);ctx2.restore();
+      }});
+    }});
+  }}}}]
+}});
+</script></body></html>""", height=340)
+        except Exception as e_rch:
+            st.warning(f"Erro ao gerar gráfico de performance por responsável (chamados): {e_rch}")
     tab_imp,tab_tech,tab_prod=st.tabs(["🏗️ Chamados Implantação","🌐 Chamados Tech","🗺️ Chamados Produtos"])
     with tab_imp:
         df_imp=st.session_state.get("df_chamados_implantacao")
