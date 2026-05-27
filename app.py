@@ -1987,7 +1987,146 @@ new Chart(document.getElementById('fluxoDiarioOS').getContext('2d'), {{
 </html>
                     """, height=420)
 
-        except Exception as erro_fluxo:
+        
+
+        # ── VISÃO DE PRODUTIVIDADE POR ANALISTA ──────────────────────────────
+        try:
+
+            dados_os = st.session_state.get("dados_os")
+
+            if dados_os:
+
+                df_prod = dados_os["df"].copy()
+
+                col_responsavel = None
+
+                for col in df_prod.columns:
+                    nome_col = str(col).strip().lower()
+
+                    if "respons" in nome_col:
+                        col_responsavel = col
+                        break
+
+                col_finalizacao = dados_os.get("col_final")
+
+                if col_responsavel and col_finalizacao:
+
+                    df_prod[col_finalizacao] = pd.to_datetime(
+                        df_prod[col_finalizacao],
+                        errors="coerce",
+                        dayfirst=True
+                    )
+
+                    df_prod = df_prod[
+                        df_prod[col_finalizacao].notna()
+                    ]
+
+                    st.markdown(
+                        '<div class="section-title">Produtividade Diária por Analista</div>',
+                        unsafe_allow_html=True
+                    )
+
+                    colf1, colf2 = st.columns(2)
+
+                    with colf1:
+                        data_inicio_prod = st.date_input(
+                            "Data Inicial Produtividade",
+                            value=df_prod[col_finalizacao].min().date(),
+                            key="produtividade_inicio"
+                        )
+
+                    with colf2:
+                        data_fim_prod = st.date_input(
+                            "Data Final Produtividade",
+                            value=df_prod[col_finalizacao].max().date(),
+                            key="produtividade_fim"
+                        )
+
+                    df_prod = df_prod[
+                        (df_prod[col_finalizacao].dt.date >= data_inicio_prod) &
+                        (df_prod[col_finalizacao].dt.date <= data_fim_prod)
+                    ]
+
+                    produtividade = (
+                        df_prod.groupby(col_responsavel)
+                        .size()
+                        .reset_index(name="Finalizadas")
+                        .sort_values("Finalizadas", ascending=False)
+                    )
+
+                    labels_prod = produtividade[col_responsavel].astype(str).tolist()
+                    valores_prod = produtividade["Finalizadas"].astype(int).tolist()
+
+                    components.html(f"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+</head>
+
+<body style="margin:0;padding:0;background:transparent;font-family:'Inter',sans-serif;">
+
+<div style="padding:8px 0 0 0;">
+
+<div style="position:relative;width:100%;height:480px;">
+<canvas id="produtividadeAnalista"></canvas>
+</div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+
+<script>
+
+const labels = {labels_prod};
+const valores = {valores_prod};
+
+new Chart(document.getElementById('produtividadeAnalista').getContext('2d'), {{
+    type: 'bar',
+
+    data: {{
+        labels: labels,
+
+        datasets: [{{
+            label: 'OS Finalizadas',
+            data: valores
+        }}]
+    }},
+
+    options: {{
+        responsive: true,
+        maintainAspectRatio: false,
+
+        plugins: {{
+            legend: {{
+                display: true,
+                position: 'top'
+            }}
+        }},
+
+        scales: {{
+            x: {{
+                grid: {{
+                    display: false
+                }}
+            }},
+            y: {{
+                beginAtZero: true
+            }}
+        }}
+    }}
+}});
+
+</script>
+</body>
+</html>
+                    """, height=520)
+
+        except Exception as erro_produtividade:
+            st.warning(f"Erro ao gerar produtividade por analista: {erro_produtividade}")
+
+
+except Exception as erro_fluxo:
             st.warning(f"Erro ao gerar gráfico diário de OS: {erro_fluxo}")
 
 
