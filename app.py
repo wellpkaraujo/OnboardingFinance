@@ -1733,11 +1733,15 @@ elif pagina == "📈 Gráficos — OS":
             def br(n): return f"{n:,}".replace(",",".")
             taxa=resumo['taxa_conclusao']
             dt='Alta taxa de conclusão' if taxa>=90 else 'Taxa de conclusão regular' if taxa>=70 else 'Taxa de conclusão baixa'
-            c1,c2,c3,c4=st.columns(4)
+            media_mensal = round(tab_mes["Finalizadas"].mean(), 1) if tab_mes is not None and "Finalizadas" in tab_mes.columns and len(tab_mes) > 0 else 0
+            meses_com_fin = int((tab_mes["Finalizadas"] > 0).sum()) if tab_mes is not None and "Finalizadas" in tab_mes.columns else 0
+            sub_media = f"Média em {meses_com_fin} {'mês' if meses_com_fin==1 else 'meses'}" if meses_com_fin > 0 else "Nenhum mês com OS"
+            c1,c2,c3,c4,c5=st.columns(5)
             with c1: st.markdown(f'<div class="metric-card"><div class="value">{br(resumo["os_recebidas"])}</div><div style="font-size:0.85rem;font-weight:600;color:#1F4E79;margin-top:4px;">OS Recebidas</div><div class="sub">Total no Período</div></div>', unsafe_allow_html=True)
-            with c2: st.markdown(f'<div class="metric-card"><div class="value metric-green">{br(resumo["os_finalizadas"])}</div><div style="font-size:0.85rem;font-weight:600;color:#1a7a4a;margin-top:4px;">OS Finalizadas</div></div>', unsafe_allow_html=True)
-            with c3: st.markdown(f'<div class="metric-card"><div class="value">{resumo["taxa_conclusao"]}%</div><div style="font-size:0.85rem;font-weight:600;color:#1F4E79;margin-top:4px;">Taxa de Conclusão</div><div class="sub">{dt}</div></div>', unsafe_allow_html=True)
-            with c4:
+            with c2: st.markdown(f'<div class="metric-card"><div class="value metric-green">{br(resumo["os_finalizadas"])}</div><div style="font-size:0.85rem;font-weight:600;color:#1a7a4a;margin-top:4px;">OS Finalizadas</div><div class="sub">Total no Período</div></div>', unsafe_allow_html=True)
+            with c3: st.markdown(f'<div class="metric-card"><div class="value">{media_mensal}</div><div style="font-size:0.85rem;font-weight:600;color:#1F4E79;margin-top:4px;">Média / Mês</div><div class="sub">{sub_media}</div></div>', unsafe_allow_html=True)
+            with c4: st.markdown(f'<div class="metric-card"><div class="value">{resumo["taxa_conclusao"]}%</div><div style="font-size:0.85rem;font-weight:600;color:#1F4E79;margin-top:4px;">Taxa de Conclusão</div><div class="sub">{dt}</div></div>', unsafe_allow_html=True)
+            with c5:
                 cor="metric-green" if resumo['pct_dentro_sla']>=80 else "metric-orange" if resumo['pct_dentro_sla']>=60 else "metric-red"
                 st.markdown(f'<div class="metric-card"><div class="value {cor}">{resumo["pct_dentro_sla"]}%</div><div style="font-size:0.85rem;font-weight:600;color:#1F4E79;margin-top:4px;">Dentro do SLA</div><div class="sub">Das OS Finalizadas</div></div>', unsafe_allow_html=True)
             st.markdown("")
