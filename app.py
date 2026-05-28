@@ -594,6 +594,10 @@ _defaults = {
     "nome_chamados_implantacao": None, "nome_chamados_tech": None, "nome_chamados_produtos": None,
     "data_chamados_implantacao": None, "data_chamados_tech": None, "data_chamados_produtos": None,
     "_estado_carregado": False,
+    "fluxo_os_inicio_salvo": None,
+    "fluxo_os_fim_salvo": None,
+    "perf_resp_inicio_salvo": None,
+    "perf_resp_fim_salvo": None,
 }
 for k, v in _defaults.items():
     if k not in st.session_state: st.session_state[k] = v
@@ -1615,13 +1619,18 @@ new Chart(document.getElementById('fluxoDiarioCh_{label_area}').getContext('2d')
 
         # ── Performance por Responsável — Chamados ────────────────────
         try:
-            col_resp_ch = "Criado por" if "Criado por" in df_area.columns else None
+            # Busca dinâmica pela coluna de responsável atual da planilha
+            _kws_resp = ["atribuído","atribuido","responsável","responsavel","agente","assignee","assigned to","owner","analista"]
+            col_resp_ch = next(
+                (c for c in df_area.columns if any(kw in str(c).lower() for kw in _kws_resp)),
+                None
+            )
             if col_resp_ch and "Criação do Ticket" in df_area.columns:
                 df_rch = df_area.copy()
                 df_rch["Criação do Ticket"] = pd.to_datetime(df_rch["Criação do Ticket"], errors="coerce", dayfirst=True)
                 df_rch = df_rch[df_rch[col_resp_ch].astype(str).str.strip().str.lower() != "nan"]
 
-                st.markdown('<div class="section-title">Performance por Responsável — Chamados</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="section-title">Performance por Responsável — Chamados <span style="font-size:0.78rem;font-weight:400;color:#888;margin-left:8px;">coluna: {col_resp_ch}</span></div>', unsafe_allow_html=True)
 
                 data_min_rch = df_rch["Criação do Ticket"].min().date()
                 data_max_rch = pd.Timestamp.today().date()
@@ -2101,23 +2110,30 @@ function syncLine(){{
                         unsafe_allow_html=True
                     )
 
-                    col1, col2 = st.columns(2)
+                    _fi_default = st.session_state.get("fluxo_os_inicio_salvo") or dias.min().date()
+                    _ff_default = st.session_state.get("fluxo_os_fim_salvo") or dias.max().date()
 
+                    col1, col2, col3 = st.columns([2, 2, 1])
                     with col1:
                         data_inicio_filtro = st.date_input(
                             "Data Inicial",
-                            value=dias.min().date(),
+                            value=_fi_default,
                             format="DD/MM/YYYY",
                             key="fluxo_os_inicio"
                         )
-
                     with col2:
                         data_fim_filtro = st.date_input(
                             "Data Final",
-                            value=dias.max().date(),
+                            value=_ff_default,
                             format="DD/MM/YYYY",
                             key="fluxo_os_fim"
                         )
+                    with col3:
+                        st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+                        if st.button("💾 Salvar datas", key="fluxo_os_salvar"):
+                            st.session_state["fluxo_os_inicio_salvo"] = st.session_state["fluxo_os_inicio"]
+                            st.session_state["fluxo_os_fim_salvo"] = st.session_state["fluxo_os_fim"]
+                            st.toast("✅ Datas do Fluxo Diário salvas!", icon="✅")
 
                     df_grafico = pd.DataFrame({
                         "Data": pd.to_datetime(labels_dias, format="%d/%m"),
@@ -2252,7 +2268,7 @@ new Chart(document.getElementById('rfChart').getContext('2d'),{{
                 df_resp = dados_os_resp["df"].copy()
                 col_responsavel_g = dados_os_resp.get("col_responsavel")
                 col_final_g       = dados_os_resp.get("col_final")
-                col_criacao_g     = dados_os_resp.get("col_criacao")
+                col_criacao_g     = dados_os_resp.get("col_criacao") or dados_os_resp.get("col_criacao_g")
 
                 if col_responsavel_g and col_responsavel_g in df_resp.columns and col_final_g and col_final_g in df_resp.columns:
 
@@ -2276,10 +2292,13 @@ new Chart(document.getElementById('rfChart').getContext('2d'),{{
                         data_min_resp = datas_validas.min().date() if len(datas_validas) else pd.Timestamp.today().date()
                     data_max_resp = pd.Timestamp.today().date()
 
+                    _pri_default = st.session_state.get("perf_resp_inicio_salvo") or data_min_resp
+                    _prf_default = st.session_state.get("perf_resp_fim_salvo") or data_max_resp
+
                     with col_f1:
-                        resp_inicio = st.date_input("Data Inicial", value=data_min_resp, format="DD/MM/YYYY", key="perf_resp_inicio")
+                        resp_inicio = st.date_input("Data Inicial", value=_pri_default, format="DD/MM/YYYY", key="perf_resp_inicio")
                     with col_f2:
-                        resp_fim = st.date_input("Data Final", value=data_max_resp, format="DD/MM/YYYY", key="perf_resp_fim")
+                        resp_fim = st.date_input("Data Final", value=_prf_default, format="DD/MM/YYYY", key="perf_resp_fim")
 
                     # Lista de responsáveis ordenada
                     lista_responsaveis = sorted(df_resp[col_responsavel_g].dropna().astype(str).str.strip().unique().tolist())
@@ -2292,20 +2311,33 @@ new Chart(document.getElementById('rfChart').getContext('2d'),{{
                             key="perf_resp_select"
                         )
 
+                    col_f4, _ = st.columns([1, 3])
+                    with col_f4:
+                        if st.button("💾 Salvar datas", key="perf_resp_salvar"):
+                            st.session_state["perf_resp_inicio_salvo"] = st.session_state["perf_resp_inicio"]
+                            st.session_state["perf_resp_fim_salvo"] = st.session_state["perf_resp_fim"]
+                            st.toast("✅ Datas da Performance por Responsável salvas!", icon="✅")
+
                     # ── Aplicar filtro de datas ────────────────────────────
-                    # Filtra por data de finalização OU criação no período
+                    # OS criadas no período (independente de estar finalizada ou não)
                     mask_periodo = pd.Series([False] * len(df_resp), index=df_resp.index)
                     if col_criacao_g and col_criacao_g in df_resp.columns:
                         mask_periodo |= (
                             (df_resp[col_criacao_g].dt.date >= resp_inicio) &
                             (df_resp[col_criacao_g].dt.date <= resp_fim)
                         )
-                    mask_fin = df_resp[col_final_g].notna() & (
+                    # OS finalizadas no período (mesmo que criadas fora)
+                    mask_fin_periodo = df_resp[col_final_g].notna() & (
                         (df_resp[col_final_g].dt.date >= resp_inicio) &
                         (df_resp[col_final_g].dt.date <= resp_fim)
                     )
-                    mask_periodo |= mask_fin
-                    df_periodo = df_resp[mask_periodo].copy()
+                    mask_periodo |= mask_fin_periodo
+
+                    # OS em andamento (sem finalização) — sempre incluídas para mostrar carteira atual
+                    mask_em_aberto = df_resp[col_final_g].isna()
+                    mask_total = mask_periodo | mask_em_aberto
+
+                    df_periodo = df_resp[mask_total].copy()
 
                     # Filtro por responsável selecionado
                     if resp_selecionados:
@@ -2315,16 +2347,21 @@ new Chart(document.getElementById('rfChart').getContext('2d'),{{
                         st.info("Nenhuma OS encontrada para os filtros selecionados.")
                     else:
                         # ── Gráfico 1: Visão geral por responsável ─────────
+                        # Finalizadas: somente as finalizadas dentro do período selecionado
                         finalizadas_no_periodo = df_periodo[
                             df_periodo[col_final_g].notna() &
                             (df_periodo[col_final_g].dt.date >= resp_inicio) &
                             (df_periodo[col_final_g].dt.date <= resp_fim)
                         ]
-                        total_resp  = df_periodo.groupby(col_responsavel_g).size().reset_index(name="Total")
+                        # Em aberto: OS sem data de finalização (carteira atual do responsável)
+                        em_aberto_df = df_periodo[df_periodo[col_final_g].isna()]
+
                         fin_resp    = finalizadas_no_periodo.groupby(col_responsavel_g).size().reset_index(name="Finalizadas")
-                        perf        = total_resp.merge(fin_resp, on=col_responsavel_g, how="left").fillna(0)
+                        aberto_resp = em_aberto_df.groupby(col_responsavel_g).size().reset_index(name="Em Aberto")
+                        perf        = fin_resp.merge(aberto_resp, on=col_responsavel_g, how="outer").fillna(0)
                         perf["Finalizadas"] = perf["Finalizadas"].astype(int)
-                        perf["Em Aberto"]   = perf["Total"] - perf["Finalizadas"]
+                        perf["Em Aberto"]   = perf["Em Aberto"].astype(int)
+                        perf["Total"]       = perf["Finalizadas"] + perf["Em Aberto"]
                         perf["Taxa (%)"]    = (perf["Finalizadas"] / perf["Total"] * 100).round(1)
                         perf = perf.sort_values("Finalizadas", ascending=False).head(20)
 
