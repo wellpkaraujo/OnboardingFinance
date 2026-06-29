@@ -2847,8 +2847,28 @@ elif pagina == "👤 Desempenho Individual":
         if nome_di and data_di:
             st.markdown(f'<div style="background:#f0f4f8;border-left:4px solid #1F4E79;border-radius:6px;padding:10px 16px;margin-bottom:1rem;font-size:0.85rem;color:#444;">📂 <b>Planilha:</b> {nome_di} &nbsp;|&nbsp; 🕐 <b>Carregada em:</b> {data_di}</div>', unsafe_allow_html=True)
 
-        finalizadas_di = df_di[df_di["Status Calculado"] == "Finalizada"]
-        andamento_di   = df_di[df_di["Status Calculado"] != "Finalizada"]
+        # ── Seletor de Responsável (afeta Resumo Geral e Mês/SLA) ─────────
+        df_di_base = df_di.copy()
+        if col_resp_di and col_resp_di in df_di_base.columns:
+            lista_resp_resumo = sorted(
+                df_di_base[col_resp_di].dropna().astype(str).str.strip()
+                .loc[lambda s: ~s.str.lower().isin(["nan","none","","<na>"])]
+                .unique().tolist()
+            )
+            resp_resumo_sel = st.multiselect(
+                "Filtrar por Responsável(is)",
+                options=lista_resp_resumo,
+                default=[],
+                placeholder="Todos os responsáveis",
+                key="di_resumo_resp_sel"
+            )
+            if resp_resumo_sel:
+                df_di_base = df_di_base[df_di_base[col_resp_di].astype(str).str.strip().isin(resp_resumo_sel)]
+        else:
+            resp_resumo_sel = []
+
+        finalizadas_di = df_di_base[df_di_base["Status Calculado"] == "Finalizada"]
+        andamento_di   = df_di_base[df_di_base["Status Calculado"] != "Finalizada"]
         dentro_di      = andamento_di[andamento_di["Dentro SLA"]]
         fora_di        = andamento_di[~andamento_di["Dentro SLA"]]
 
@@ -2862,9 +2882,9 @@ elif pagina == "👤 Desempenho Individual":
         media_dias = round(finalizadas_di["Dias Uteis"].mean(), 1) if len(finalizadas_di) > 0 else 0
 
         c1,c2,c3,c4,c5 = st.columns(5)
-        with c1: st.markdown(f'<div class="metric-card"><div class="label">Total OS</div><div class="value">{len(df_di)}</div><div class="sub">Na planilha</div></div>', unsafe_allow_html=True)
-        with c2: st.markdown(f'<div class="metric-card metric-green"><div class="label">Finalizadas</div><div class="value">{len(finalizadas_di)}</div><div class="sub">{round(len(finalizadas_di)/len(df_di)*100,1) if len(df_di)>0 else 0}% do total</div></div>', unsafe_allow_html=True)
-        with c3: st.markdown(f'<div class="metric-card"><div class="label">Em Andamento</div><div class="value">{len(andamento_di)}</div><div class="sub">{round(len(andamento_di)/len(df_di)*100,1) if len(df_di)>0 else 0}% do total</div></div>', unsafe_allow_html=True)
+        with c1: st.markdown(f'<div class="metric-card"><div class="label">Total OS</div><div class="value">{len(df_di_base)}</div><div class="sub">{"Responsável(is) selecionado(s)" if resp_resumo_sel else "Na planilha"}</div></div>', unsafe_allow_html=True)
+        with c2: st.markdown(f'<div class="metric-card metric-green"><div class="label">Finalizadas</div><div class="value">{len(finalizadas_di)}</div><div class="sub">{round(len(finalizadas_di)/len(df_di_base)*100,1) if len(df_di_base)>0 else 0}% do total</div></div>', unsafe_allow_html=True)
+        with c3: st.markdown(f'<div class="metric-card"><div class="label">Em Andamento</div><div class="value">{len(andamento_di)}</div><div class="sub">{round(len(andamento_di)/len(df_di_base)*100,1) if len(df_di_base)>0 else 0}% do total</div></div>', unsafe_allow_html=True)
         with c4: st.markdown(f'<div class="metric-card metric-green"><div class="label">% SLA (Finalizadas)</div><div class="value">{pct_fin_sla}%</div><div class="sub">{fin_sla} dentro de {len(finalizadas_di)}</div></div>', unsafe_allow_html=True)
         with c5: st.markdown(f'<div class="metric-card"><div class="label">Média Dias (Fin.)</div><div class="value">{media_dias}</div><div class="sub">Dias por OS finalizada</div></div>', unsafe_allow_html=True)
         st.markdown("")
