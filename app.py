@@ -2849,23 +2849,28 @@ elif pagina == "👤 Desempenho Individual":
 
         # ── Seletor de Responsável (afeta Resumo Geral e Mês/SLA) ─────────
         df_di_base = df_di.copy()
-        if col_resp_di and col_resp_di in df_di_base.columns:
+        if col_resp_di and col_resp_di in df_di.columns:
             lista_resp_resumo = sorted(
-                df_di_base[col_resp_di].dropna().astype(str).str.strip()
+                df_di[col_resp_di].dropna().astype(str).str.strip()
                 .loc[lambda s: ~s.str.lower().isin(["nan","none","","<na>"])]
                 .unique().tolist()
             )
-            resp_resumo_sel = st.multiselect(
+            # Inicializar session_state na primeira vez
+            if "di_resumo_resp_sel" not in st.session_state:
+                st.session_state["di_resumo_resp_sel"] = []
+
+            st.multiselect(
                 "Filtrar por Responsável(is)",
                 options=lista_resp_resumo,
-                default=[],
                 placeholder="Todos os responsáveis",
                 key="di_resumo_resp_sel"
             )
-            if resp_resumo_sel:
-                df_di_base = df_di_base[df_di_base[col_resp_di].astype(str).str.strip().isin(resp_resumo_sel)]
-        else:
-            resp_resumo_sel = []
+        
+        # Aplicar filtro lendo diretamente do session_state (valor pós-rerun)
+        _resp_filtro = st.session_state.get("di_resumo_resp_sel", [])
+        if _resp_filtro and col_resp_di and col_resp_di in df_di_base.columns:
+            df_di_base = df_di_base[df_di_base[col_resp_di].astype(str).str.strip().isin(_resp_filtro)]
+        resp_resumo_sel = _resp_filtro
 
         finalizadas_di = df_di_base[df_di_base["Status Calculado"] == "Finalizada"]
         andamento_di   = df_di_base[df_di_base["Status Calculado"] != "Finalizada"]
@@ -2890,7 +2895,7 @@ elif pagina == "👤 Desempenho Individual":
         st.markdown("")
 
         # ── Gráfico 1: OS Finalizadas por Mês — SLA ───────────────────────
-        if col_final_di and col_final_di in df_di.columns and len(finalizadas_di) > 0:
+        if col_final_di and col_final_di in df_di_base.columns and len(finalizadas_di) > 0:
             st.markdown('<div class="section-title">OS Finalizadas por Mês — SLA</div>', unsafe_allow_html=True)
             fin_cp = finalizadas_di.copy()
             fin_cp["_Mes"] = fin_cp[col_final_di].dt.to_period("M")
