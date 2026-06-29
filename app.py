@@ -598,6 +598,11 @@ _defaults = {
     "fluxo_os_fim_salvo": None,
     "perf_resp_inicio_salvo": None,
     "perf_resp_fim_salvo": None,
+    "dados_os_individual": None,
+    "nome_arquivo_os_individual": None,
+    "data_upload_os_individual": None,
+    "di_resp_inicio_salvo": None,
+    "di_resp_fim_salvo": None,
 }
 for k, v in _defaults.items():
     if k not in st.session_state: st.session_state[k] = v
@@ -1266,7 +1271,8 @@ with st.sidebar:
     st.markdown("---")
     opcoes=["🏠 Início","📋 Chamados — Implantação","📋 Chamados — Tech","📋 Chamados — Produtos",
             "📊 Gráficos — Chamados","📄 Status Atual — Chamados","🔧 Ordens de Serviço",
-            "📈 Gráficos — OS","📄 Status Atual — OS","⚙️ Configuração de Motivos","ℹ️ Sobre"]
+            "📈 Gráficos — OS","📄 Status Atual — OS","👤 Desempenho Individual",
+            "⚙️ Configuração de Motivos","ℹ️ Sobre"]
     pagina=st.radio("Navegação",opcoes,label_visibility="collapsed")
     st.markdown("---")
     st.markdown('<div class="footer-custom">Versão 3.2</div>', unsafe_allow_html=True)
@@ -2581,6 +2587,408 @@ elif pagina == "📄 Status Atual — OS":
         pdf_content,erro=baixar_pdf_github()
     if pdf_content: st.download_button(label="📥 Baixar Status Atual (PDF)",data=pdf_content,file_name="Status_Atual_OS.pdf",mime="application/pdf")
     elif erro: st.info(erro)
+
+elif pagina == "👤 Desempenho Individual":
+    import streamlit.components.v1 as components
+    import json as _json
+    st.markdown('<div class="section-title">👤 Desempenho Individual — Ordens de Serviço</div>', unsafe_allow_html=True)
+    st.markdown("""<div style="background:#f8fafc;border-left:3px solid #1F4E79;border-radius:6px;padding:10px 16px;margin-bottom:1rem;font-size:0.85rem;color:#555;">
+        Este módulo utiliza uma planilha de OS <b>exclusiva</b>, independente da planilha carregada em <b>🔧 Ordens de Serviço</b>.
+        Carregue aqui a planilha individual (ou recortada) para analisar o desempenho de colaboradores específicos.
+    </div>""", unsafe_allow_html=True)
+
+    sla_dias_di = st.number_input("SLA (dias úteis)", min_value=1, max_value=30, value=st.session_state.sla_dias, key="sla_di_input")
+
+    arquivo_di = st.file_uploader("Selecione a planilha de OS (Desempenho Individual)", type=["xlsx"], key="upload_os_individual")
+    if arquivo_di:
+        with st.spinner("Analisando OS..."):
+            bytes_di = arquivo_di.getvalue()
+            df_di, erro_di = analisar_os(bytes_di, sla_dias_di)
+            st.session_state.nome_arquivo_os_individual = arquivo_di.name
+            st.session_state.data_upload_os_individual = datetime.now(timezone(timedelta(hours=-3))).strftime("%d/%m/%Y às %H:%M")
+        if erro_di:
+            st.error(f"Erro ao processar planilha: {erro_di}")
+        else:
+            def _find_di(kw): return next((c for c in df_di.columns if kw in str(c).lower()), None)
+            col_final_di   = _find_di("final")
+            col_status_di  = next((c for c in df_di.columns if "status" in str(c).lower() and c != "Status Calculado"), None)
+            col_resp_di    = _find_di("respons")
+            col_empresa_di = _find_di("empres")
+            col_num_os_di  = next((c for c in df_di.columns if any(x in str(c).lower() for x in ["n° os","n°os","numero","n. os"])), df_di.columns[1] if len(df_di.columns) > 1 else None)
+            col_criacao_di = _find_di("cria")
+            st.session_state.dados_os_individual = {
+                "df": df_di,
+                "col_status": col_status_di,
+                "col_responsavel": col_resp_di,
+                "col_empresa": col_empresa_di,
+                "col_final": col_final_di,
+                "col_num_os": col_num_os_di,
+                "col_criacao": col_criacao_di,
+                "sla_dias": sla_dias_di,
+            }
+            st.success("✅ Planilha carregada com sucesso!")
+
+    dados_di = st.session_state.get("dados_os_individual")
+    if dados_di is None:
+        st.info("Selecione uma planilha de OS para iniciar a análise de desempenho individual.")
+    else:
+        df_di        = dados_di["df"]
+        col_resp_di  = dados_di["col_responsavel"]
+        col_final_di = dados_di["col_final"]
+        col_cria_di  = dados_di["col_criacao"]
+        col_stat_di  = dados_di["col_status"]
+        col_nos_di   = dados_di["col_num_os"]
+        col_emp_di   = dados_di["col_empresa"]
+        sla_d_di     = dados_di["sla_dias"]
+
+        nome_di = st.session_state.get("nome_arquivo_os_individual")
+        data_di = st.session_state.get("data_upload_os_individual")
+        if nome_di and data_di:
+            st.markdown(f'<div style="background:#f0f4f8;border-left:4px solid #1F4E79;border-radius:6px;padding:10px 16px;margin-bottom:1rem;font-size:0.85rem;color:#444;">📂 <b>Planilha:</b> {nome_di} &nbsp;|&nbsp; 🕐 <b>Carregada em:</b> {data_di}</div>', unsafe_allow_html=True)
+
+        finalizadas_di = df_di[df_di["Status Calculado"] == "Finalizada"]
+        andamento_di   = df_di[df_di["Status Calculado"] != "Finalizada"]
+        dentro_di      = andamento_di[andamento_di["Dentro SLA"]]
+        fora_di        = andamento_di[~andamento_di["Dentro SLA"]]
+
+        # ── Métricas gerais ──────────────────────────────────────────────────
+        st.markdown('<div class="section-title">Resumo Geral</div>', unsafe_allow_html=True)
+        pct_dentro_di = round(len(dentro_di)/len(andamento_di)*100, 1) if len(andamento_di) > 0 else 0
+        pct_fora_di   = round(len(fora_di)/len(andamento_di)*100, 1)   if len(andamento_di) > 0 else 0
+        c1,c2,c3,c4,c5 = st.columns(5)
+        with c1: st.markdown(f'<div class="metric-card"><div class="label">Total OS</div><div class="value">{len(df_di)}</div></div>', unsafe_allow_html=True)
+        with c2: st.markdown(f'<div class="metric-card metric-green"><div class="label">Finalizadas</div><div class="value">{len(finalizadas_di)}</div></div>', unsafe_allow_html=True)
+        with c3: st.markdown(f'<div class="metric-card"><div class="label">Em Andamento</div><div class="value">{len(andamento_di)}</div></div>', unsafe_allow_html=True)
+        with c4: st.markdown(f'<div class="metric-card metric-green"><div class="label">Dentro SLA</div><div class="value">{len(dentro_di)}</div><div class="sub">{pct_dentro_di}%</div></div>', unsafe_allow_html=True)
+        with c5: st.markdown(f'<div class="metric-card metric-red"><div class="label">Fora do SLA</div><div class="value">{len(fora_di)}</div><div class="sub">{pct_fora_di}%</div></div>', unsafe_allow_html=True)
+        st.markdown("")
+
+        # ── Gráfico 1: OS Finalizadas por Mês — SLA ─────────────────────────
+        if col_final_di and len(finalizadas_di) > 0:
+            st.markdown('<div class="section-title">OS Finalizadas por Mês — SLA</div>', unsafe_allow_html=True)
+            fin_di_cp = finalizadas_di.copy()
+            fin_di_cp["Mes"] = fin_di_cp[col_final_di].dt.to_period("M")
+            tab_mes_di = fin_di_cp.groupby("Mes").agg(
+                Finalizadas=("Mes","count"), Dentro=("Dentro SLA","sum")
+            ).reset_index()
+            tab_mes_di["Fora"]       = tab_mes_di["Finalizadas"] - tab_mes_di["Dentro"]
+            tab_mes_di["Dentro_pct"] = (tab_mes_di["Dentro"]/tab_mes_di["Finalizadas"]*100).round(0).astype(int)
+            tab_mes_di["Fora_pct"]   = (tab_mes_di["Fora"]/tab_mes_di["Finalizadas"]*100).round(0).astype(int)
+            tab_mes_di["Mês"]        = tab_mes_di["Mes"].apply(lambda m: mes_abrev(str(m)))
+
+            labels_di = tab_mes_di["Mês"].tolist()
+            qtd_di    = tab_mes_di["Finalizadas"].tolist()
+            dentro_pct_di = tab_mes_di["Dentro_pct"].tolist()
+            fora_pct_di   = tab_mes_di["Fora_pct"].tolist()
+
+            components.html(f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:transparent;font-family:'Inter',sans-serif;">
+<div style="padding:8px 0 0 0;">
+  <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:10px;font-size:12px;color:#666;justify-content:center;">
+    <span><span style="width:10px;height:10px;border-radius:2px;background:#5b8dd9;display:inline-block;"></span> % Dentro do SLA</span>
+    <span><span style="width:10px;height:10px;border-radius:2px;background:#e8a0a0;display:inline-block;"></span> % Fora do SLA</span>
+    <span><span style="width:20px;height:2px;background:#444;display:inline-block;vertical-align:middle;"></span> Finalizadas</span>
+  </div>
+  <div style="position:relative;width:100%;height:80px;"><canvas id="diLineChart"></canvas></div>
+  <div style="position:relative;width:100%;height:260px;"><canvas id="diBarChart"></canvas></div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const labels={labels_di};const qtd={qtd_di};const dentro={dentro_pct_di};const fora={fora_pct_di};
+let barChart,lineChart;
+barChart=new Chart(document.getElementById('diBarChart').getContext('2d'),{{data:{{labels,datasets:[
+  {{type:'bar',label:'% Dentro do SLA',data:dentro,backgroundColor:'#5b8dd9',stack:'sla',barPercentage:0.5,categoryPercentage:0.65}},
+  {{type:'bar',label:'% Fora do SLA',data:fora,backgroundColor:'#e8a0a0',stack:'sla',barPercentage:0.5,categoryPercentage:0.65}}
+]}},options:{{responsive:true,maintainAspectRatio:false,animation:{{onComplete:syncLine}},
+layout:{{padding:{{left:0,right:0,bottom:4}}}},plugins:{{legend:{{display:false}}}},
+scales:{{x:{{stacked:true,grid:{{display:false}},ticks:{{font:{{size:12}},color:'#888780'}},border:{{display:false}}}},
+y:{{stacked:true,min:0,max:100,ticks:{{callback:v=>v+'%',font:{{size:11}},color:'#888780',stepSize:25}},grid:{{color:'rgba(136,135,128,0.15)'}},border:{{display:false}}}}}}}},
+plugins:[{{id:'barLabels',afterDatasetsDraw(chart){{
+  const ctx2=chart.ctx;
+  chart.getDatasetMeta(0).data.forEach((bar,i)=>{{ctx2.save();ctx2.font='500 11px Inter,sans-serif';ctx2.fillStyle='#fff';ctx2.textAlign='center';ctx2.textBaseline='middle';ctx2.fillText(dentro[i]+'%',bar.x,bar.y+bar.height/2);ctx2.restore();}});
+  chart.getDatasetMeta(1).data.forEach((bar,i)=>{{ctx2.save();ctx2.font='500 11px Inter,sans-serif';ctx2.fillStyle='#8b3a3a';ctx2.textAlign='center';ctx2.textBaseline='middle';ctx2.fillText(fora[i]+'%',bar.x,bar.y+bar.height/2);ctx2.restore();}});
+}}}}]
+}});
+function syncLine(){{
+  if(!barChart)return;
+  const meta=barChart.getDatasetMeta(0);const xPos=meta.data.map(b=>b.x);
+  const lp=xPos[0];const rp=barChart.width-xPos[xPos.length-1];
+  if(lineChart)lineChart.destroy();
+  lineChart=new Chart(document.getElementById('diLineChart').getContext('2d'),{{
+    type:'line',data:{{labels,datasets:[{{data:qtd,borderColor:'#444441',backgroundColor:'#444441',pointBackgroundColor:'#444441',pointRadius:5,pointHoverRadius:7,borderWidth:2,tension:0}}]}},
+    options:{{responsive:true,maintainAspectRatio:false,layout:{{padding:{{top:20,left:lp,right:rp,bottom:4}}}},plugins:{{legend:{{display:false}}}},scales:{{x:{{display:false}},y:{{display:false,min:Math.min(...qtd)*0.85,max:Math.max(...qtd)*1.1}}}}}},
+    plugins:[{{id:'lineLabels',afterDatasetsDraw(chart){{const ctx2=chart.ctx;chart.getDatasetMeta(0).data.forEach((pt,i)=>{{ctx2.save();ctx2.font='500 12px Inter,sans-serif';ctx2.fillStyle='#2c2c2a';ctx2.textAlign='center';ctx2.fillText(qtd[i],pt.x,pt.y-10);ctx2.restore();}});}}}}]
+  }});
+}}
+</script></body></html>""", height=380)
+
+            # Tabela mensal
+            st.markdown(estilizar_tab_mes(tab_mes_di), unsafe_allow_html=True)
+            st.markdown("")
+
+        # ── Gráfico 2: Performance por Responsável ───────────────────────────
+        if col_resp_di and col_resp_di in df_di.columns:
+            st.markdown('<div class="section-title">Performance por Responsável</div>', unsafe_allow_html=True)
+
+            df_resp_di = df_di[df_di[col_resp_di].astype(str).str.strip().str.lower() != "nan"].copy()
+            if col_cria_di and col_cria_di in df_resp_di.columns:
+                df_resp_di[col_cria_di] = pd.to_datetime(df_resp_di[col_cria_di], errors="coerce", dayfirst=True)
+            if col_final_di and col_final_di in df_resp_di.columns:
+                df_resp_di[col_final_di] = pd.to_datetime(df_resp_di[col_final_di], errors="coerce", dayfirst=True)
+
+            # Filtros de período e responsável
+            datas_validas_di = df_resp_di[col_final_di].dropna() if col_final_di else pd.Series(dtype="datetime64[ns]")
+            datas_cria_di    = df_resp_di[col_cria_di].dropna() if col_cria_di and col_cria_di in df_resp_di.columns else pd.Series(dtype="datetime64[ns]")
+            data_min_di = min(datas_validas_di.min(), datas_cria_di.min()).date() if len(datas_validas_di) and len(datas_cria_di) else (datas_cria_di.min().date() if len(datas_cria_di) else datetime.today().date())
+            data_max_di = datetime.today().date()
+
+            _di_ini_def = st.session_state.get("di_resp_inicio_salvo") or data_min_di
+            _di_fim_def = st.session_state.get("di_resp_fim_salvo") or data_max_di
+
+            colf1, colf2, colf3 = st.columns([1,1,2])
+            with colf1:
+                di_inicio = st.date_input("Data Inicial", value=_di_ini_def, format="DD/MM/YYYY", key="di_resp_inicio")
+            with colf2:
+                di_fim    = st.date_input("Data Final",   value=_di_fim_def, format="DD/MM/YYYY", key="di_resp_fim")
+            with colf3:
+                lista_resp_di = sorted(df_resp_di[col_resp_di].dropna().astype(str).str.strip().unique().tolist())
+                resp_di_sel   = st.multiselect("Responsável(is)", options=lista_resp_di, default=[], placeholder="Todos os responsáveis", key="di_resp_sel")
+
+            colsv, _ = st.columns([1,3])
+            with colsv:
+                if st.button("💾 Salvar datas", key="di_resp_salvar"):
+                    st.session_state["di_resp_inicio_salvo"] = st.session_state["di_resp_inicio"]
+                    st.session_state["di_resp_fim_salvo"]    = st.session_state["di_resp_fim"]
+                    st.toast("✅ Datas salvas!", icon="✅")
+
+            # Aplicar filtros
+            mask_di = pd.Series([False]*len(df_resp_di), index=df_resp_di.index)
+            if col_cria_di and col_cria_di in df_resp_di.columns:
+                mask_di |= (df_resp_di[col_cria_di].dt.date >= di_inicio) & (df_resp_di[col_cria_di].dt.date <= di_fim)
+            if col_final_di and col_final_di in df_resp_di.columns:
+                mask_di |= df_resp_di[col_final_di].notna() & (df_resp_di[col_final_di].dt.date >= di_inicio) & (df_resp_di[col_final_di].dt.date <= di_fim)
+            mask_di |= df_resp_di[col_final_di].isna() if col_final_di else False
+            df_per_di = df_resp_di[mask_di].copy()
+            if resp_di_sel:
+                df_per_di = df_per_di[df_per_di[col_resp_di].astype(str).str.strip().isin(resp_di_sel)]
+
+            if len(df_per_di) == 0:
+                st.info("Nenhuma OS encontrada para os filtros selecionados.")
+            else:
+                fin_per_di    = df_per_di[df_per_di[col_final_di].notna() & (df_per_di[col_final_di].dt.date >= di_inicio) & (df_per_di[col_final_di].dt.date <= di_fim)] if col_final_di else df_per_di
+                aberto_per_di = df_per_di[df_per_di[col_final_di].isna()] if col_final_di else pd.DataFrame()
+
+                fin_r   = fin_per_di.groupby(col_resp_di).size().reset_index(name="Finalizadas")
+                abr_r   = aberto_per_di.groupby(col_resp_di).size().reset_index(name="Em Aberto") if len(aberto_per_di) > 0 else pd.DataFrame(columns=[col_resp_di,"Em Aberto"])
+                sla_r   = fin_per_di[fin_per_di["Dentro SLA"]].groupby(col_resp_di).size().reset_index(name="Dentro SLA") if "Dentro SLA" in fin_per_di.columns else pd.DataFrame(columns=[col_resp_di,"Dentro SLA"])
+
+                perf_di = fin_r.merge(abr_r, on=col_resp_di, how="outer").merge(sla_r, on=col_resp_di, how="left").fillna(0)
+                perf_di["Finalizadas"] = perf_di["Finalizadas"].astype(int)
+                perf_di["Em Aberto"]   = perf_di["Em Aberto"].astype(int)
+                perf_di["Dentro SLA"]  = perf_di["Dentro SLA"].astype(int)
+                perf_di["Total"]       = perf_di["Finalizadas"] + perf_di["Em Aberto"]
+                perf_di["Taxa (%)"]    = (perf_di["Finalizadas"] / perf_di["Total"] * 100).round(1)
+                perf_di["% SLA"]       = (perf_di["Dentro SLA"] / perf_di["Finalizadas"].replace(0,1) * 100).round(1)
+                perf_di = perf_di.sort_values("Finalizadas", ascending=False).head(20)
+
+                resp_list_di = perf_di[col_resp_di].tolist()
+                fin_list_di  = perf_di["Finalizadas"].tolist()
+                abr_list_di  = perf_di["Em Aberto"].tolist()
+                taxa_list_di = perf_di["Taxa (%)"].tolist()
+                sla_list_di  = perf_di["% SLA"].tolist()
+
+                components.html(f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:transparent;font-family:'Inter',sans-serif;">
+<div style="padding:8px 0 0 0;">
+  <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:10px;font-size:12px;color:#666;justify-content:center;">
+    <span><span style="width:10px;height:10px;border-radius:2px;background:#6dbf8b;display:inline-block;"></span> Finalizadas no período</span>
+    <span><span style="width:10px;height:10px;border-radius:2px;background:#e8a0a0;display:inline-block;"></span> Em Aberto</span>
+    <span><span style="width:20px;height:2px;background:#2563eb;display:inline-block;vertical-align:middle;"></span> Taxa de Conclusão (%)</span>
+    <span><span style="width:20px;height:2px;background:#10b981;display:inline-block;vertical-align:middle;border-top:3px dashed #10b981;"></span> % Dentro do SLA</span>
+  </div>
+  <div style="position:relative;width:100%;height:80px;"><canvas id="diLineResp"></canvas></div>
+  <div style="position:relative;width:100%;height:300px;"><canvas id="diBarResp"></canvas></div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const labels={_json.dumps(resp_list_di)};
+const fin={fin_list_di};const aberto={abr_list_di};const taxa={taxa_list_di};const sla={sla_list_di};
+let barDI,lineDI;
+barDI=new Chart(document.getElementById('diBarResp').getContext('2d'),{{
+  data:{{labels,datasets:[
+    {{type:'bar',label:'Finalizadas',data:fin,backgroundColor:'#6dbf8b',stack:'di',barPercentage:0.5,categoryPercentage:0.65}},
+    {{type:'bar',label:'Em Aberto',data:aberto,backgroundColor:'#e8a0a0',stack:'di',barPercentage:0.5,categoryPercentage:0.65}}
+  ]}},
+  options:{{responsive:true,maintainAspectRatio:false,animation:{{onComplete:syncLineDI}},
+    layout:{{padding:{{left:0,right:0,bottom:4}}}},plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{label:ctx=>` ${{ctx.dataset.label}}: ${{ctx.parsed.y}}`}}}}}},
+    scales:{{
+      x:{{stacked:true,grid:{{display:false}},ticks:{{font:{{size:11}},color:'#888780',maxRotation:35,minRotation:25}},border:{{display:false}}}},
+      y:{{stacked:true,beginAtZero:true,ticks:{{stepSize:1,font:{{size:11}},color:'#888780'}},grid:{{color:'rgba(136,135,128,0.15)'}},border:{{display:false}}}}
+    }}
+  }},
+  plugins:[{{id:'barDILabels',afterDatasetsDraw(chart){{
+    const ctx2=chart.ctx;
+    chart.getDatasetMeta(0).data.forEach((bar,i)=>{{if(fin[i]===0)return;ctx2.save();ctx2.font='600 10px Inter,sans-serif';ctx2.fillStyle='#fff';ctx2.textAlign='center';ctx2.textBaseline='middle';ctx2.fillText(fin[i],bar.x,bar.y+bar.height/2);ctx2.restore();}});
+    chart.getDatasetMeta(1).data.forEach((bar,i)=>{{if(aberto[i]===0)return;ctx2.save();ctx2.font='600 10px Inter,sans-serif';ctx2.fillStyle='#8b3a3a';ctx2.textAlign='center';ctx2.textBaseline='middle';ctx2.fillText(aberto[i],bar.x,bar.y+bar.height/2);ctx2.restore();}});
+  }}}}]
+}});
+function syncLineDI(){{
+  if(!barDI)return;
+  const meta=barDI.getDatasetMeta(0);const xPos=meta.data.map(b=>b.x);
+  const lp=xPos[0];const rp=barDI.width-xPos[xPos.length-1];
+  if(lineDI)lineDI.destroy();
+  lineDI=new Chart(document.getElementById('diLineResp').getContext('2d'),{{
+    type:'line',data:{{labels,datasets:[
+      {{data:taxa,borderColor:'#2563eb',backgroundColor:'#2563eb',pointBackgroundColor:'#2563eb',pointRadius:5,pointHoverRadius:7,borderWidth:2,tension:0,label:'Taxa'}},
+      {{data:sla,borderColor:'#10b981',backgroundColor:'#10b981',pointBackgroundColor:'#10b981',pointRadius:4,pointHoverRadius:6,borderWidth:2,tension:0,borderDash:[5,4],label:'SLA'}}
+    ]}},
+    options:{{responsive:true,maintainAspectRatio:false,layout:{{padding:{{top:20,left:lp,right:rp,bottom:4}}}},plugins:{{legend:{{display:false}}}},scales:{{x:{{display:false}},y:{{display:false,min:0,max:115}}}}}},
+    plugins:[{{id:'lineDILabels',afterDatasetsDraw(chart){{
+      const ctx2=chart.ctx;
+      chart.getDatasetMeta(0).data.forEach((pt,i)=>{{ctx2.save();ctx2.font='500 10px Inter,sans-serif';ctx2.fillStyle='#1e3a5f';ctx2.textAlign='center';ctx2.fillText(taxa[i]+'%',pt.x,pt.y-9);ctx2.restore();}});
+      chart.getDatasetMeta(1).data.forEach((pt,i)=>{{ctx2.save();ctx2.font='500 10px Inter,sans-serif';ctx2.fillStyle='#065f46';ctx2.textAlign='center';ctx2.fillText(sla[i]+'%',pt.x,pt.y+14);ctx2.restore();}});
+    }}}}]
+  }});
+}}
+</script></body></html>""", height=420)
+
+                # Tabela de performance
+                st.markdown('<div class="section-title">Tabela de Desempenho por Responsável</div>', unsafe_allow_html=True)
+                tab_perf_di = perf_di[[col_resp_di,"Finalizadas","Em Aberto","Total","Taxa (%)","Dentro SLA","% SLA"]].copy()
+                tab_perf_di = tab_perf_di.rename(columns={col_resp_di:"Responsável","% SLA":"% Dentro SLA"})
+                st.markdown(estilizar(tab_perf_di), unsafe_allow_html=True)
+                st.markdown("")
+
+                # ── Gráfico 3: Atividade diária por responsável selecionado ──
+                if resp_di_sel and col_cria_di and col_cria_di in df_resp_di.columns:
+                    for nome_di_r in resp_di_sel:
+                        df_um_di = df_resp_di[df_resp_di[col_resp_di].astype(str).str.strip() == nome_di_r].copy()
+                        if len(df_um_di) == 0:
+                            continue
+
+                        dias_r_di = pd.date_range(di_inicio, di_fim, freq="D")
+                        labels_ddi, total_ddi, fin_ddi, saldo_ddi = [], [], [], []
+
+                        for dia in dias_r_di:
+                            ts_dia = pd.Timestamp(dia)
+                            criadas_ate = df_um_di[df_um_di[col_cria_di].dt.normalize() <= ts_dia]
+                            if col_final_di and col_final_di in df_um_di.columns:
+                                finalizadas_antes = criadas_ate[criadas_ate[col_final_di].notna() & (criadas_ate[col_final_di].dt.normalize() < ts_dia)]
+                                total_no_dia = len(criadas_ate) - len(finalizadas_antes)
+                                fin_no_dia   = int(df_um_di[df_um_di[col_final_di].notna() & (df_um_di[col_final_di].dt.normalize() == ts_dia)].shape[0])
+                            else:
+                                total_no_dia = len(criadas_ate)
+                                fin_no_dia   = 0
+                            saldo_no_dia = total_no_dia - fin_no_dia
+                            labels_ddi.append(dia.strftime("%d/%m"))
+                            total_ddi.append(int(total_no_dia))
+                            fin_ddi.append(int(fin_no_dia))
+                            saldo_ddi.append(int(saldo_no_dia))
+
+                        df_ddi_df = pd.DataFrame({"label":labels_ddi,"total":total_ddi,"fin":fin_ddi,"saldo":saldo_ddi})
+                        primeiro_ddi = df_ddi_df[(df_ddi_df["total"]>0)|(df_ddi_df["fin"]>0)].index.min()
+                        if pd.notna(primeiro_ddi):
+                            df_ddi_df = df_ddi_df.loc[primeiro_ddi:]
+                        labels_ddi = df_ddi_df["label"].tolist()
+                        total_ddi  = df_ddi_df["total"].tolist()
+                        fin_ddi    = df_ddi_df["fin"].tolist()
+                        saldo_ddi  = df_ddi_df["saldo"].tolist()
+                        saldo_atual_di = int(df_um_di[df_um_di[col_final_di].isna()].shape[0]) if col_final_di and col_final_di in df_um_di.columns else 0
+                        _saldo_max_di  = max(saldo_ddi) if saldo_ddi else 1
+                        _cid_di = nome_di_r.replace(" ","_").replace("/","_").replace(".","_")
+
+                        st.markdown(
+                            f'<div class="section-title">📅 Atividade Diária — {nome_di_r} '
+                            f'&nbsp;<span style="font-size:0.82rem;font-weight:500;color:#888;">Saldo atual: '
+                            f'<b style="color:#e05a5a">{saldo_atual_di} OS em aberto</b></span></div>',
+                            unsafe_allow_html=True
+                        )
+                        components.html(f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:transparent;font-family:'Inter',sans-serif;">
+<div style="padding:8px 0 0 0;">
+  <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:10px;font-size:12px;color:#666;justify-content:center;">
+    <span><span style="width:10px;height:10px;border-radius:2px;background:#5b8dd9;display:inline-block;"></span> OS no Dia (carteira)</span>
+    <span><span style="width:10px;height:10px;border-radius:2px;background:#6dbf8b;display:inline-block;"></span> Finalizadas no Dia</span>
+    <span><span style="width:20px;height:2px;background:#e05a5a;display:inline-block;vertical-align:middle;"></span> Saldo do Dia</span>
+  </div>
+  <div style="position:relative;width:100%;height:72px;"><canvas id="lineSaldo_{_cid_di}"></canvas></div>
+  <div style="position:relative;width:100%;height:300px;"><canvas id="diarioDI_{_cid_di}"></canvas></div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const labels={labels_ddi};const total={total_ddi};const fin={fin_ddi};const saldo={saldo_ddi};
+let barDiDI,lineSaldoDI;
+barDiDI=new Chart(document.getElementById('diarioDI_{_cid_di}').getContext('2d'),{{
+  type:'bar',
+  data:{{labels,datasets:[
+    {{label:'OS no Dia',data:total,backgroundColor:'#5b8dd9',barPercentage:0.6,categoryPercentage:0.7}},
+    {{label:'Finalizadas',data:fin,backgroundColor:'#6dbf8b',barPercentage:0.6,categoryPercentage:0.7}}
+  ]}},
+  options:{{
+    responsive:true,maintainAspectRatio:false,animation:{{onComplete:syncSaldoDI}},
+    plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{label:ctx=>` ${{ctx.dataset.label}}: ${{ctx.parsed.y}}`}}}}}},
+    scales:{{
+      x:{{grid:{{display:false}},ticks:{{font:{{size:11}},color:'#888780',maxRotation:35,minRotation:25}},border:{{display:false}}}},
+      y:{{beginAtZero:true,ticks:{{stepSize:1,font:{{size:11}},color:'#888780'}},grid:{{color:'rgba(136,135,128,0.15)'}},border:{{display:false}}}}
+    }}
+  }},
+  plugins:[{{id:'lblDiDI',afterDatasetsDraw(chart){{
+    const ctx2=chart.ctx;
+    chart.data.datasets.forEach((_,di)=>{{chart.getDatasetMeta(di).data.forEach((bar,i)=>{{
+      const val=chart.data.datasets[di].data[i];if(val===0)return;
+      ctx2.save();ctx2.font='600 10px Inter,sans-serif';ctx2.fillStyle='#fff';ctx2.textAlign='center';ctx2.textBaseline='middle';
+      ctx2.fillText(val,bar.x,bar.y+bar.height/2);ctx2.restore();
+    }});}});
+  }}}}]
+}});
+function syncSaldoDI(){{
+  if(!barDiDI)return;
+  const meta=barDiDI.getDatasetMeta(0);const xPos=meta.data.map(b=>b.x);
+  const lp=xPos[0];const rp=barDiDI.width-xPos[xPos.length-1];
+  if(lineSaldoDI)lineSaldoDI.destroy();
+  lineSaldoDI=new Chart(document.getElementById('lineSaldo_{_cid_di}').getContext('2d'),{{
+    type:'line',data:{{labels,datasets:[{{data:saldo,borderColor:'#e05a5a',backgroundColor:'#e05a5a',pointBackgroundColor:'#e05a5a',pointRadius:5,pointHoverRadius:7,borderWidth:2,tension:0}}]}},
+    options:{{responsive:true,maintainAspectRatio:false,layout:{{padding:{{top:20,left:lp,right:rp,bottom:4}}}},plugins:{{legend:{{display:false}}}},scales:{{x:{{display:false}},y:{{display:false,min:0,max:{_saldo_max_di}*1.5+1}}}}}},
+    plugins:[{{id:'lblSaldoDI',afterDatasetsDraw(chart){{
+      const ctx2=chart.ctx;chart.getDatasetMeta(0).data.forEach((pt,i)=>{{ctx2.save();ctx2.font='600 11px Inter,sans-serif';ctx2.fillStyle='#c0392b';ctx2.textAlign='center';ctx2.fillText(saldo[i],pt.x,pt.y-10);ctx2.restore();}});
+    }}}}]
+  }});
+}}
+</script></body></html>""", height=420)
+
+        # ── OS Fora do SLA por Responsável ──────────────────────────────────
+        if col_resp_di and len(fora_di) > 0:
+            st.markdown(f'<div class="section-title">🔴 OS Fora do SLA por Responsável (> {sla_d_di} dias úteis)</div>', unsafe_allow_html=True)
+            fora_grp = fora_di.groupby(col_resp_di).agg(
+                OS_Fora=("Dias Uteis","count"),
+                Media_Dias=("Dias Uteis","mean"),
+                Max_Dias=("Dias Uteis","max")
+            ).reset_index().sort_values("OS_Fora", ascending=False)
+            fora_grp["Média Dias"] = fora_grp["Media_Dias"].round(1)
+            fora_grp["Máx. Dias"]  = fora_grp["Max_Dias"].astype(int)
+            fora_grp = fora_grp.rename(columns={col_resp_di:"Responsável","OS_Fora":"OS Fora SLA"})
+            st.markdown(estilizar(fora_grp[["Responsável","OS Fora SLA","Média Dias","Máx. Dias"]]), unsafe_allow_html=True)
+            st.markdown("")
+
+        # ── Lista detalhada de OS fora do SLA ───────────────────────────────
+        if len(fora_di) > 0:
+            st.markdown(f'<div class="section-title">📋 Detalhamento — OS Fora do SLA</div>', unsafe_allow_html=True)
+            cf_di = [col_nos_di] + ([col_resp_di] if col_resp_di else []) + ([col_stat_di] if col_stat_di else []) + ["Dias Uteis"]
+            fv_di = fora_di[cf_di].copy().sort_values("Dias Uteis", ascending=False)
+            rf_di = {col_nos_di:"N° OS","Dias Uteis":"Dias em Aberto"}
+            if col_resp_di: rf_di[col_resp_di] = "Responsável"
+            if col_stat_di: rf_di[col_stat_di] = "Status"
+            st.markdown(estilizar(fv_di.rename(columns=rf_di)), unsafe_allow_html=True)
+            st.markdown("")
+
+        # ── Exportar Excel ───────────────────────────────────────────────────
+        excel_di = gerar_excel_os(df_di, sla_d_di, col_nos_di, col_resp_di, col_emp_di, col_stat_di, col_final_di)
+        st.download_button(
+            label="📥 Exportar Relatório Excel — Desempenho Individual",
+            data=excel_di,
+            file_name=f"Desempenho_Individual_{datetime.today().strftime('%d%m%Y')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
 elif pagina == "⚙️ Configuração de Motivos":
     st.markdown('<div class="section-title">⚙️ Configuração de Motivos</div>', unsafe_allow_html=True)
