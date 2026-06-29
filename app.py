@@ -144,7 +144,9 @@ def salvar_estado_github(salvar_dfs=True):
             "nome_chamados_produtos",
             "data_chamados_produtos",
             "sla_dias",
-            "resumo_executivo"
+            "resumo_executivo",
+            "nome_arquivo_os_individual",
+            "data_upload_os_individual",
         ]:
             val = st.session_state.get(key)
             if val is not None:
@@ -159,6 +161,14 @@ def salvar_estado_github(salvar_dfs=True):
         if dados is not None:
             estado["dados_os_meta"] = {
                 k: v for k, v in dados.items()
+                if k != "df"
+            }
+
+        # Salvar meta do módulo individual
+        dados_ind = st.session_state.get("dados_os_individual")
+        if dados_ind is not None:
+            estado["dados_os_individual_meta"] = {
+                k: v for k, v in dados_ind.items()
                 if k != "df"
             }
 
@@ -209,6 +219,18 @@ def salvar_estado_github(salvar_dfs=True):
             except Exception as e:
                 st.error(f"Erro upload df_os: {e}")
 
+        # Salvar parquet do módulo individual
+        dados_ind = st.session_state.get("dados_os_individual")
+        if salvar_dfs and dados_ind is not None and dados_ind.get("df") is not None:
+            try:
+                gh_upload_bytes(
+                    "df_os_individual.parquet",
+                    df_to_parquet_bytes(dados_ind["df"]),
+                    "Atualiza df_os_individual"
+                )
+            except Exception as e:
+                st.error(f"Erro upload df_os_individual: {e}")
+
         return True
 
     except Exception as e:
@@ -251,6 +273,8 @@ def carregar_estado_github():
             "data_chamados_produtos",
             "sla_dias",
             "resumo_executivo",
+            "nome_arquivo_os_individual",
+            "data_upload_os_individual",
         ]:
             if key in estado and st.session_state.get(key) is None:
                 st.session_state[key] = estado[key]
@@ -431,6 +455,44 @@ def carregar_estado_github():
                     
                 except Exception as e:
                     st.warning(f"Erro ao restaurar df_os: {e}")
+
+        # ─────────────────────────────────────────────────────────────
+        # Restaurar DESEMPENHO INDIVIDUAL
+        # ─────────────────────────────────────────────────────────────
+        if st.session_state.get("dados_os_individual") is None:
+            raw_ind, _ = gh_download_bytes("df_os_individual.parquet")
+            if raw_ind:
+                try:
+                    df_ind = parquet_bytes_to_df(raw_ind)
+                    meta_ind = estado.get("dados_os_individual_meta", {})
+
+                    def _find_ind(kw):
+                        return next((c for c in df_ind.columns if kw.lower() in str(c).lower()), None)
+
+                    # Reconverter datas
+                    for ck in ["col_criacao", "col_final"]:
+                        cn = meta_ind.get(ck) or _find_ind("criacao" if ck == "col_criacao" else "finalizacao")
+                        if cn and cn in df_ind.columns:
+                            df_ind[cn] = pd.to_datetime(df_ind[cn], errors="coerce")
+
+                    # Recriar colunas calculadas se necessário
+                    if "Status Calculado" not in df_ind.columns:
+                        col_s = meta_ind.get("col_status") or _find_ind("status")
+                        if col_s and col_s in df_ind.columns:
+                            df_ind["Status Calculado"] = df_ind[col_s].apply(
+                                lambda x: "Finalizada" if str(x).strip().upper() in ["FINALIZADA","FINALIZADO"] else "Em andamento"
+                            )
+                    if "Dias Uteis" not in df_ind.columns:
+                        col_d = _find_ind("periodo_responsabilidade_em_dia") or _find_ind("total_dias")
+                        if col_d and col_d in df_ind.columns:
+                            df_ind["Dias Uteis"] = pd.to_numeric(df_ind[col_d], errors="coerce").fillna(0).astype(int)
+                    sla_d_ind = meta_ind.get("sla_dias", st.session_state.get("sla_dias", 5))
+                    if "Dentro SLA" not in df_ind.columns and "Dias Uteis" in df_ind.columns:
+                        df_ind["Dentro SLA"] = df_ind["Dias Uteis"] <= sla_d_ind
+
+                    st.session_state.dados_os_individual = {**meta_ind, "df": df_ind}
+                except Exception as e:
+                    st.warning(f"Erro ao restaurar df_os_individual: {e}")
 
     except Exception as e:
         st.warning(f"Erro ao carregar estado do GitHub: {e}")
@@ -738,8 +800,150 @@ def analisar_os(file_content, sla_dias):
     df["Dentro SLA"] = df["Dias Uteis"] <= sla_dias
     return df, None
 
+def analisar_os_individual(file_content, sla_dias):
+    """
+    Analisa planilha de OS no formato exportado pelo sistema interno
+    (colunas snake_case: os_numero, os_usuario_responsavel_nome, os_status_nome,
+    os_data_criacao, os_data_finalizacao, periodo_responsabilidade_em_dia, etc.)
+    Também suporta o formato legado com busca de cabeçalho por 'status'.
+    """
+    import io as _io
 
-# ─── GITHUB PDF ────────────────────────────────────────────────────────────────
+    def _excel_serial_to_ts(val):
+        try:
+            if pd.isna(val): return pd.NaT
+            if isinstance(val, (pd.Timestamp, datetime)): return pd.Timestamp(val)
+            return pd.Timestamp('1899-12-30') + pd.Timedelta(days=float(val))
+        except:
+            return pd.NaT
+
+    # ── Tentar formato snake_case primeiro ──────────────────────────────────
+    try:
+        df_raw = pd.read_excel(_io.BytesIO(file_content), header=0)
+        df_raw.columns = df_raw.columns.str.strip()
+
+        # Detectar se é o formato snake_case verificando colunas-chave
+        _cols_lower = [c.lower() for c in df_raw.columns]
+        is_snake = any("os_numero" in c or "os_usuario_responsavel" in c for c in _cols_lower)
+
+        if is_snake:
+            df = df_raw.copy()
+
+            # Mapear colunas para nomes padronizados
+            def _col(kws):
+                for kw in kws:
+                    found = next((c for c in df.columns if kw.lower() in c.lower()), None)
+                    if found: return found
+                return None
+
+            col_num_os     = _col(["os_numero"])
+            col_status     = _col(["os_status_nome"])
+            col_criacao    = _col(["os_data_criacao"])
+            col_final      = _col(["os_data_finalizacao"])
+            col_responsavel = _col(["os_usuario_responsavel_nome"])
+            col_empresa    = _col(["empresa_razao_social", "grupo_empresa"])
+            col_banco      = _col(["banco_nome"])
+            col_dias       = _col(["periodo_responsabilidade_em_dia_time", "periodo_responsabilidade_em_dia", "total_dias_os"])
+
+            if not col_status or not col_num_os:
+                return None, "Colunas obrigatórias (os_numero, os_status_nome) não encontradas."
+
+            # Remover duplicatas
+            df = df.drop_duplicates(subset=[col_num_os]).reset_index(drop=True)
+
+            # Converter datas (podem ser seriais numéricos ou datetime)
+            for col_d in [col_criacao, col_final]:
+                if col_d and col_d in df.columns:
+                    df[col_d] = df[col_d].apply(_excel_serial_to_ts)
+
+            # Status Calculado
+            df["Status Calculado"] = df[col_status].apply(
+                lambda x: "Finalizada" if str(x).strip().upper() == "FINALIZADA" else "Em andamento"
+            )
+
+            # Dias Úteis — usar coluna existente se disponível, senão calcular
+            if col_dias and col_dias in df.columns:
+                df["Dias Uteis"] = pd.to_numeric(df[col_dias], errors="coerce").fillna(0).astype(int)
+            elif col_criacao and col_final:
+                df["Dias Uteis"] = df.apply(
+                    lambda r: dias_uteis(r[col_criacao], r[col_final]), axis=1
+                )
+            else:
+                df["Dias Uteis"] = 0
+
+            df["Dentro SLA"] = df["Dias Uteis"] <= sla_dias
+
+            return df, None, {
+                "col_num_os": col_num_os,
+                "col_status": col_status,
+                "col_criacao": col_criacao,
+                "col_final": col_final,
+                "col_responsavel": col_responsavel,
+                "col_empresa": col_empresa,
+                "col_banco": col_banco,
+                "sla_dias": sla_dias,
+                "formato": "snake_case",
+            }
+
+    except Exception as e_snake:
+        pass  # fallback para formato legado
+
+    # ── Fallback: formato legado (busca cabeçalho por "status") ────────────
+    try:
+        raw = pd.read_excel(_io.BytesIO(file_content), header=None)
+        header_row = None
+        for i, row in raw.iterrows():
+            if row.astype(str).str.lower().str.contains("status").any():
+                header_row = i; break
+        if header_row is None:
+            return None, "Não foi possível localizar o cabeçalho na planilha.", {}
+
+        df = pd.read_excel(_io.BytesIO(file_content), header=header_row)
+        df = df.loc[:, ~df.columns.str.contains("^Unnamed")]
+        df.columns = df.columns.str.strip()
+
+        col_os = df.columns[1]
+        df = df.drop_duplicates(subset=[col_os])
+
+        def find(kw): return next((c for c in df.columns if kw in str(c).lower()), None)
+        col_status    = find("status")
+        col_criacao   = find("cria")
+        col_final     = find("final")
+        col_resp      = find("respons")
+        col_empresa   = find("empres")
+        col_num_os    = next((c for c in df.columns if any(x in str(c).lower() for x in ["n° os","n°os","numero","n. os"])), col_os)
+
+        if not col_criacao or not col_status:
+            return None, "Colunas necessárias não encontradas.", {}
+
+        df[col_criacao] = pd.to_datetime(df[col_criacao], dayfirst=True, errors="coerce")
+        if col_final:
+            df[col_final] = pd.to_datetime(df[col_final], dayfirst=True, errors="coerce")
+
+        df["Status Calculado"] = df[col_status].apply(
+            lambda x: "Finalizada" if str(x).strip() == "Finalizada" else "Em andamento"
+        )
+        df["Dias Uteis"] = df.apply(
+            lambda r: dias_uteis(r[col_criacao], r[col_final] if col_final else None), axis=1
+        )
+        df["Dentro SLA"] = df["Dias Uteis"] <= sla_dias
+
+        return df, None, {
+            "col_num_os": col_num_os,
+            "col_status": col_status,
+            "col_criacao": col_criacao,
+            "col_final": col_final,
+            "col_responsavel": col_resp,
+            "col_empresa": col_empresa,
+            "col_banco": None,
+            "sla_dias": sla_dias,
+            "formato": "legado",
+        }
+
+    except Exception as e_leg:
+        return None, f"Erro ao processar planilha: {e_leg}", {}
+
+
 
 def upload_pdf_github(pdf_bytes, nome_arq="", data_arq=""):
     ok, err = gh_upload_bytes("status_atual.pdf", pdf_bytes, "Atualiza status_atual.pdf")
@@ -2594,7 +2798,7 @@ elif pagina == "👤 Desempenho Individual":
     st.markdown('<div class="section-title">👤 Desempenho Individual — Ordens de Serviço</div>', unsafe_allow_html=True)
     st.markdown("""<div style="background:#f8fafc;border-left:3px solid #1F4E79;border-radius:6px;padding:10px 16px;margin-bottom:1rem;font-size:0.85rem;color:#555;">
         Este módulo utiliza uma planilha de OS <b>exclusiva</b>, independente da planilha carregada em <b>🔧 Ordens de Serviço</b>.
-        Carregue aqui a planilha individual (ou recortada) para analisar o desempenho de colaboradores específicos.
+        Os dados são salvos automaticamente e restaurados ao reabrir o sistema.
     </div>""", unsafe_allow_html=True)
 
     sla_dias_di = st.number_input("SLA (dias úteis)", min_value=1, max_value=30, value=st.session_state.sla_dias, key="sla_di_input")
@@ -2603,43 +2807,40 @@ elif pagina == "👤 Desempenho Individual":
     if arquivo_di:
         with st.spinner("Analisando OS..."):
             bytes_di = arquivo_di.getvalue()
-            df_di, erro_di = analisar_os(bytes_di, sla_dias_di)
-            st.session_state.nome_arquivo_os_individual = arquivo_di.name
-            st.session_state.data_upload_os_individual = datetime.now(timezone(timedelta(hours=-3))).strftime("%d/%m/%Y às %H:%M")
+            resultado_di = analisar_os_individual(bytes_di, sla_dias_di)
+        if len(resultado_di) == 3:
+            df_di, erro_di, meta_di = resultado_di
+        else:
+            df_di, erro_di, meta_di = None, "Erro desconhecido", {}
+
         if erro_di:
             st.error(f"Erro ao processar planilha: {erro_di}")
         else:
-            def _find_di(kw): return next((c for c in df_di.columns if kw in str(c).lower()), None)
-            col_final_di   = _find_di("final")
-            col_status_di  = next((c for c in df_di.columns if "status" in str(c).lower() and c != "Status Calculado"), None)
-            col_resp_di    = _find_di("respons")
-            col_empresa_di = _find_di("empres")
-            col_num_os_di  = next((c for c in df_di.columns if any(x in str(c).lower() for x in ["n° os","n°os","numero","n. os"])), df_di.columns[1] if len(df_di.columns) > 1 else None)
-            col_criacao_di = _find_di("cria")
-            st.session_state.dados_os_individual = {
-                "df": df_di,
-                "col_status": col_status_di,
-                "col_responsavel": col_resp_di,
-                "col_empresa": col_empresa_di,
-                "col_final": col_final_di,
-                "col_num_os": col_num_os_di,
-                "col_criacao": col_criacao_di,
-                "sla_dias": sla_dias_di,
-            }
-            st.success("✅ Planilha carregada com sucesso!")
+            st.session_state.nome_arquivo_os_individual = arquivo_di.name
+            st.session_state.data_upload_os_individual = datetime.now(timezone(timedelta(hours=-3))).strftime("%d/%m/%Y às %H:%M")
+            st.session_state.dados_os_individual = {**meta_di, "df": df_di}
+            with st.spinner("Salvando dados..."):
+                salvar_estado_github(salvar_dfs=True)
+            st.toast("✅ Planilha salva com sucesso!", icon="✅")
 
     dados_di = st.session_state.get("dados_os_individual")
     if dados_di is None:
         st.info("Selecione uma planilha de OS para iniciar a análise de desempenho individual.")
     else:
-        df_di        = dados_di["df"]
-        col_resp_di  = dados_di["col_responsavel"]
-        col_final_di = dados_di["col_final"]
-        col_cria_di  = dados_di["col_criacao"]
-        col_stat_di  = dados_di["col_status"]
-        col_nos_di   = dados_di["col_num_os"]
-        col_emp_di   = dados_di["col_empresa"]
-        sla_d_di     = dados_di["sla_dias"]
+        df_di         = dados_di["df"]
+        col_resp_di   = dados_di.get("col_responsavel")
+        col_final_di  = dados_di.get("col_final")
+        col_cria_di   = dados_di.get("col_criacao")
+        col_stat_di   = dados_di.get("col_status")
+        col_nos_di    = dados_di.get("col_num_os")
+        col_emp_di    = dados_di.get("col_empresa")
+        col_banco_di  = dados_di.get("col_banco")
+        sla_d_di      = dados_di.get("sla_dias", sla_dias_di)
+
+        # Garantir tipos de data corretos após restauração
+        for _dc in [col_cria_di, col_final_di]:
+            if _dc and _dc in df_di.columns:
+                df_di[_dc] = pd.to_datetime(df_di[_dc], errors="coerce")
 
         nome_di = st.session_state.get("nome_arquivo_os_individual")
         data_di = st.session_state.get("data_upload_os_individual")
@@ -2651,35 +2852,40 @@ elif pagina == "👤 Desempenho Individual":
         dentro_di      = andamento_di[andamento_di["Dentro SLA"]]
         fora_di        = andamento_di[~andamento_di["Dentro SLA"]]
 
-        # ── Métricas gerais ──────────────────────────────────────────────────
+        # ── Cards de resumo ────────────────────────────────────────────────
         st.markdown('<div class="section-title">Resumo Geral</div>', unsafe_allow_html=True)
         pct_dentro_di = round(len(dentro_di)/len(andamento_di)*100, 1) if len(andamento_di) > 0 else 0
         pct_fora_di   = round(len(fora_di)/len(andamento_di)*100, 1)   if len(andamento_di) > 0 else 0
+        # % SLA das finalizadas
+        fin_sla = finalizadas_di[finalizadas_di["Dentro SLA"]].shape[0] if "Dentro SLA" in finalizadas_di.columns else 0
+        pct_fin_sla = round(fin_sla/len(finalizadas_di)*100, 1) if len(finalizadas_di) > 0 else 0
+        media_dias = round(finalizadas_di["Dias Uteis"].mean(), 1) if len(finalizadas_di) > 0 else 0
+
         c1,c2,c3,c4,c5 = st.columns(5)
-        with c1: st.markdown(f'<div class="metric-card"><div class="label">Total OS</div><div class="value">{len(df_di)}</div></div>', unsafe_allow_html=True)
-        with c2: st.markdown(f'<div class="metric-card metric-green"><div class="label">Finalizadas</div><div class="value">{len(finalizadas_di)}</div></div>', unsafe_allow_html=True)
-        with c3: st.markdown(f'<div class="metric-card"><div class="label">Em Andamento</div><div class="value">{len(andamento_di)}</div></div>', unsafe_allow_html=True)
-        with c4: st.markdown(f'<div class="metric-card metric-green"><div class="label">Dentro SLA</div><div class="value">{len(dentro_di)}</div><div class="sub">{pct_dentro_di}%</div></div>', unsafe_allow_html=True)
-        with c5: st.markdown(f'<div class="metric-card metric-red"><div class="label">Fora do SLA</div><div class="value">{len(fora_di)}</div><div class="sub">{pct_fora_di}%</div></div>', unsafe_allow_html=True)
+        with c1: st.markdown(f'<div class="metric-card"><div class="label">Total OS</div><div class="value">{len(df_di)}</div><div class="sub">Na planilha</div></div>', unsafe_allow_html=True)
+        with c2: st.markdown(f'<div class="metric-card metric-green"><div class="label">Finalizadas</div><div class="value">{len(finalizadas_di)}</div><div class="sub">{round(len(finalizadas_di)/len(df_di)*100,1) if len(df_di)>0 else 0}% do total</div></div>', unsafe_allow_html=True)
+        with c3: st.markdown(f'<div class="metric-card"><div class="label">Em Andamento</div><div class="value">{len(andamento_di)}</div><div class="sub">{round(len(andamento_di)/len(df_di)*100,1) if len(df_di)>0 else 0}% do total</div></div>', unsafe_allow_html=True)
+        with c4: st.markdown(f'<div class="metric-card metric-green"><div class="label">% SLA (Finalizadas)</div><div class="value">{pct_fin_sla}%</div><div class="sub">{fin_sla} dentro de {len(finalizadas_di)}</div></div>', unsafe_allow_html=True)
+        with c5: st.markdown(f'<div class="metric-card"><div class="label">Média Dias (Fin.)</div><div class="value">{media_dias}</div><div class="sub">Dias por OS finalizada</div></div>', unsafe_allow_html=True)
         st.markdown("")
 
-        # ── Gráfico 1: OS Finalizadas por Mês — SLA ─────────────────────────
-        if col_final_di and len(finalizadas_di) > 0:
+        # ── Gráfico 1: OS Finalizadas por Mês — SLA ───────────────────────
+        if col_final_di and col_final_di in df_di.columns and len(finalizadas_di) > 0:
             st.markdown('<div class="section-title">OS Finalizadas por Mês — SLA</div>', unsafe_allow_html=True)
-            fin_di_cp = finalizadas_di.copy()
-            fin_di_cp["Mes"] = fin_di_cp[col_final_di].dt.to_period("M")
-            tab_mes_di = fin_di_cp.groupby("Mes").agg(
-                Finalizadas=("Mes","count"), Dentro=("Dentro SLA","sum")
+            fin_cp = finalizadas_di.copy()
+            fin_cp["_Mes"] = fin_cp[col_final_di].dt.to_period("M")
+            tab_mes_di = fin_cp.groupby("_Mes").agg(
+                Finalizadas=("_Mes","count"), Dentro=("Dentro SLA","sum")
             ).reset_index()
             tab_mes_di["Fora"]       = tab_mes_di["Finalizadas"] - tab_mes_di["Dentro"]
             tab_mes_di["Dentro_pct"] = (tab_mes_di["Dentro"]/tab_mes_di["Finalizadas"]*100).round(0).astype(int)
             tab_mes_di["Fora_pct"]   = (tab_mes_di["Fora"]/tab_mes_di["Finalizadas"]*100).round(0).astype(int)
-            tab_mes_di["Mês"]        = tab_mes_di["Mes"].apply(lambda m: mes_abrev(str(m)))
+            tab_mes_di["Mês"]        = tab_mes_di["_Mes"].apply(lambda m: mes_abrev(str(m)))
 
-            labels_di = tab_mes_di["Mês"].tolist()
-            qtd_di    = tab_mes_di["Finalizadas"].tolist()
-            dentro_pct_di = tab_mes_di["Dentro_pct"].tolist()
-            fora_pct_di   = tab_mes_di["Fora_pct"].tolist()
+            labels_di_m    = tab_mes_di["Mês"].tolist()
+            qtd_di_m       = tab_mes_di["Finalizadas"].tolist()
+            dentro_pct_di  = tab_mes_di["Dentro_pct"].tolist()
+            fora_pct_di    = tab_mes_di["Fora_pct"].tolist()
 
             components.html(f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head>
 <body style="margin:0;padding:0;background:transparent;font-family:'Inter',sans-serif;">
@@ -2694,7 +2900,7 @@ elif pagina == "👤 Desempenho Individual":
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>
-const labels={labels_di};const qtd={qtd_di};const dentro={dentro_pct_di};const fora={fora_pct_di};
+const labels={labels_di_m};const qtd={qtd_di_m};const dentro={dentro_pct_di};const fora={fora_pct_di};
 let barChart,lineChart;
 barChart=new Chart(document.getElementById('diBarChart').getContext('2d'),{{data:{{labels,datasets:[
   {{type:'bar',label:'% Dentro do SLA',data:dentro,backgroundColor:'#5b8dd9',stack:'sla',barPercentage:0.5,categoryPercentage:0.65}},
@@ -2721,30 +2927,28 @@ function syncLine(){{
   }});
 }}
 </script></body></html>""", height=380)
-
-            # Tabela mensal
             st.markdown(estilizar_tab_mes(tab_mes_di), unsafe_allow_html=True)
             st.markdown("")
 
-        # ── Gráfico 2: Performance por Responsável ───────────────────────────
+        # ── Gráfico 2: Performance por Responsável ─────────────────────────
         if col_resp_di and col_resp_di in df_di.columns:
-            st.markdown('<div class="section-title">Performance por Responsável</div>', unsafe_allow_html=True)
+            df_resp_di = df_di[df_di[col_resp_di].astype(str).str.strip().str.lower().isin(["nan","none","","<na>"]) == False].copy()
 
-            df_resp_di = df_di[df_di[col_resp_di].astype(str).str.strip().str.lower() != "nan"].copy()
             if col_cria_di and col_cria_di in df_resp_di.columns:
-                df_resp_di[col_cria_di] = pd.to_datetime(df_resp_di[col_cria_di], errors="coerce", dayfirst=True)
+                df_resp_di[col_cria_di] = pd.to_datetime(df_resp_di[col_cria_di], errors="coerce")
             if col_final_di and col_final_di in df_resp_di.columns:
-                df_resp_di[col_final_di] = pd.to_datetime(df_resp_di[col_final_di], errors="coerce", dayfirst=True)
+                df_resp_di[col_final_di] = pd.to_datetime(df_resp_di[col_final_di], errors="coerce")
 
-            # Filtros de período e responsável
-            datas_validas_di = df_resp_di[col_final_di].dropna() if col_final_di else pd.Series(dtype="datetime64[ns]")
             datas_cria_di    = df_resp_di[col_cria_di].dropna() if col_cria_di and col_cria_di in df_resp_di.columns else pd.Series(dtype="datetime64[ns]")
-            data_min_di = min(datas_validas_di.min(), datas_cria_di.min()).date() if len(datas_validas_di) and len(datas_cria_di) else (datas_cria_di.min().date() if len(datas_cria_di) else datetime.today().date())
+            datas_final_di   = df_resp_di[col_final_di].dropna() if col_final_di and col_final_di in df_resp_di.columns else pd.Series(dtype="datetime64[ns]")
+            _all_dates = pd.concat([datas_cria_di, datas_final_di]).dropna()
+            data_min_di = _all_dates.min().date() if len(_all_dates) > 0 else datetime.today().date()
             data_max_di = datetime.today().date()
 
             _di_ini_def = st.session_state.get("di_resp_inicio_salvo") or data_min_di
             _di_fim_def = st.session_state.get("di_resp_fim_salvo") or data_max_di
 
+            st.markdown('<div class="section-title">Performance por Responsável</div>', unsafe_allow_html=True)
             colf1, colf2, colf3 = st.columns([1,1,2])
             with colf1:
                 di_inicio = st.date_input("Data Inicial", value=_di_ini_def, format="DD/MM/YYYY", key="di_resp_inicio")
@@ -2761,13 +2965,14 @@ function syncLine(){{
                     st.session_state["di_resp_fim_salvo"]    = st.session_state["di_resp_fim"]
                     st.toast("✅ Datas salvas!", icon="✅")
 
-            # Aplicar filtros
+            # Filtrar período
             mask_di = pd.Series([False]*len(df_resp_di), index=df_resp_di.index)
             if col_cria_di and col_cria_di in df_resp_di.columns:
                 mask_di |= (df_resp_di[col_cria_di].dt.date >= di_inicio) & (df_resp_di[col_cria_di].dt.date <= di_fim)
             if col_final_di and col_final_di in df_resp_di.columns:
                 mask_di |= df_resp_di[col_final_di].notna() & (df_resp_di[col_final_di].dt.date >= di_inicio) & (df_resp_di[col_final_di].dt.date <= di_fim)
-            mask_di |= df_resp_di[col_final_di].isna() if col_final_di else False
+            if col_final_di and col_final_di in df_resp_di.columns:
+                mask_di |= df_resp_di[col_final_di].isna()
             df_per_di = df_resp_di[mask_di].copy()
             if resp_di_sel:
                 df_per_di = df_per_di[df_per_di[col_resp_di].astype(str).str.strip().isin(resp_di_sel)]
@@ -2775,20 +2980,26 @@ function syncLine(){{
             if len(df_per_di) == 0:
                 st.info("Nenhuma OS encontrada para os filtros selecionados.")
             else:
-                fin_per_di    = df_per_di[df_per_di[col_final_di].notna() & (df_per_di[col_final_di].dt.date >= di_inicio) & (df_per_di[col_final_di].dt.date <= di_fim)] if col_final_di else df_per_di
-                aberto_per_di = df_per_di[df_per_di[col_final_di].isna()] if col_final_di else pd.DataFrame()
+                fin_per_di    = df_per_di[df_per_di["Status Calculado"] == "Finalizada"] if "Status Calculado" in df_per_di.columns else df_per_di
+                aberto_per_di = df_per_di[df_per_di["Status Calculado"] != "Finalizada"] if "Status Calculado" in df_per_di.columns else pd.DataFrame()
 
-                fin_r   = fin_per_di.groupby(col_resp_di).size().reset_index(name="Finalizadas")
-                abr_r   = aberto_per_di.groupby(col_resp_di).size().reset_index(name="Em Aberto") if len(aberto_per_di) > 0 else pd.DataFrame(columns=[col_resp_di,"Em Aberto"])
-                sla_r   = fin_per_di[fin_per_di["Dentro SLA"]].groupby(col_resp_di).size().reset_index(name="Dentro SLA") if "Dentro SLA" in fin_per_di.columns else pd.DataFrame(columns=[col_resp_di,"Dentro SLA"])
+                # Somente finalizadas no período selecionado
+                if col_final_di and col_final_di in fin_per_di.columns:
+                    fin_per_di = fin_per_di[fin_per_di[col_final_di].notna() & (fin_per_di[col_final_di].dt.date >= di_inicio) & (fin_per_di[col_final_di].dt.date <= di_fim)]
 
-                perf_di = fin_r.merge(abr_r, on=col_resp_di, how="outer").merge(sla_r, on=col_resp_di, how="left").fillna(0)
+                fin_r    = fin_per_di.groupby(col_resp_di).size().reset_index(name="Finalizadas")
+                abr_r    = aberto_per_di.groupby(col_resp_di).size().reset_index(name="Em Aberto") if len(aberto_per_di) > 0 else pd.DataFrame(columns=[col_resp_di,"Em Aberto"])
+                sla_r    = fin_per_di[fin_per_di["Dentro SLA"]].groupby(col_resp_di).size().reset_index(name="Dentro SLA") if "Dentro SLA" in fin_per_di.columns and len(fin_per_di) > 0 else pd.DataFrame(columns=[col_resp_di,"Dentro SLA"])
+                dias_r   = fin_per_di.groupby(col_resp_di)["Dias Uteis"].mean().reset_index().rename(columns={"Dias Uteis":"Media Dias"}) if "Dias Uteis" in fin_per_di.columns else pd.DataFrame(columns=[col_resp_di,"Media Dias"])
+
+                perf_di = fin_r.merge(abr_r, on=col_resp_di, how="outer").merge(sla_r, on=col_resp_di, how="left").merge(dias_r, on=col_resp_di, how="left").fillna(0)
                 perf_di["Finalizadas"] = perf_di["Finalizadas"].astype(int)
                 perf_di["Em Aberto"]   = perf_di["Em Aberto"].astype(int)
                 perf_di["Dentro SLA"]  = perf_di["Dentro SLA"].astype(int)
                 perf_di["Total"]       = perf_di["Finalizadas"] + perf_di["Em Aberto"]
-                perf_di["Taxa (%)"]    = (perf_di["Finalizadas"] / perf_di["Total"] * 100).round(1)
+                perf_di["Taxa (%)"]    = (perf_di["Finalizadas"] / perf_di["Total"].replace(0,1) * 100).round(1)
                 perf_di["% SLA"]       = (perf_di["Dentro SLA"] / perf_di["Finalizadas"].replace(0,1) * 100).round(1)
+                perf_di["Média Dias"]  = perf_di["Media Dias"].round(1)
                 perf_di = perf_di.sort_values("Finalizadas", ascending=False).head(20)
 
                 resp_list_di = perf_di[col_resp_di].tolist()
@@ -2803,8 +3014,8 @@ function syncLine(){{
   <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:10px;font-size:12px;color:#666;justify-content:center;">
     <span><span style="width:10px;height:10px;border-radius:2px;background:#6dbf8b;display:inline-block;"></span> Finalizadas no período</span>
     <span><span style="width:10px;height:10px;border-radius:2px;background:#e8a0a0;display:inline-block;"></span> Em Aberto</span>
-    <span><span style="width:20px;height:2px;background:#2563eb;display:inline-block;vertical-align:middle;"></span> Taxa de Conclusão (%)</span>
-    <span><span style="width:20px;height:2px;background:#10b981;display:inline-block;vertical-align:middle;border-top:3px dashed #10b981;"></span> % Dentro do SLA</span>
+    <span><span style="width:20px;height:2px;background:#2563eb;display:inline-block;vertical-align:middle;"></span> Taxa Conclusão (%)</span>
+    <span><span style="width:20px;border-top:3px dashed #10b981;display:inline-block;vertical-align:middle;"></span> % Dentro SLA</span>
   </div>
   <div style="position:relative;width:100%;height:80px;"><canvas id="diLineResp"></canvas></div>
   <div style="position:relative;width:100%;height:300px;"><canvas id="diBarResp"></canvas></div>
@@ -2854,12 +3065,12 @@ function syncLineDI(){{
 
                 # Tabela de performance
                 st.markdown('<div class="section-title">Tabela de Desempenho por Responsável</div>', unsafe_allow_html=True)
-                tab_perf_di = perf_di[[col_resp_di,"Finalizadas","Em Aberto","Total","Taxa (%)","Dentro SLA","% SLA"]].copy()
+                tab_perf_di = perf_di[[col_resp_di,"Finalizadas","Em Aberto","Total","Taxa (%)","Dentro SLA","% SLA","Média Dias"]].copy()
                 tab_perf_di = tab_perf_di.rename(columns={col_resp_di:"Responsável","% SLA":"% Dentro SLA"})
                 st.markdown(estilizar(tab_perf_di), unsafe_allow_html=True)
                 st.markdown("")
 
-                # ── Gráfico 3: Atividade diária por responsável selecionado ──
+                # ── Atividade Diária por responsável selecionado ───────────
                 if resp_di_sel and col_cria_di and col_cria_di in df_resp_di.columns:
                     for nome_di_r in resp_di_sel:
                         df_um_di = df_resp_di[df_resp_di[col_resp_di].astype(str).str.strip() == nome_di_r].copy()
@@ -2893,6 +3104,7 @@ function syncLineDI(){{
                         total_ddi  = df_ddi_df["total"].tolist()
                         fin_ddi    = df_ddi_df["fin"].tolist()
                         saldo_ddi  = df_ddi_df["saldo"].tolist()
+
                         saldo_atual_di = int(df_um_di[df_um_di[col_final_di].isna()].shape[0]) if col_final_di and col_final_di in df_um_di.columns else 0
                         _saldo_max_di  = max(saldo_ddi) if saldo_ddi else 1
                         _cid_di = nome_di_r.replace(" ","_").replace("/","_").replace(".","_")
@@ -2956,8 +3168,8 @@ function syncSaldoDI(){{
 }}
 </script></body></html>""", height=420)
 
-        # ── OS Fora do SLA por Responsável ──────────────────────────────────
-        if col_resp_di and len(fora_di) > 0:
+        # ── OS Fora do SLA por Responsável ────────────────────────────────
+        if col_resp_di and col_resp_di in df_di.columns and len(fora_di) > 0:
             st.markdown(f'<div class="section-title">🔴 OS Fora do SLA por Responsável (> {sla_d_di} dias úteis)</div>', unsafe_allow_html=True)
             fora_grp = fora_di.groupby(col_resp_di).agg(
                 OS_Fora=("Dias Uteis","count"),
@@ -2970,18 +3182,7 @@ function syncSaldoDI(){{
             st.markdown(estilizar(fora_grp[["Responsável","OS Fora SLA","Média Dias","Máx. Dias"]]), unsafe_allow_html=True)
             st.markdown("")
 
-        # ── Lista detalhada de OS fora do SLA ───────────────────────────────
-        if len(fora_di) > 0:
-            st.markdown(f'<div class="section-title">📋 Detalhamento — OS Fora do SLA</div>', unsafe_allow_html=True)
-            cf_di = [col_nos_di] + ([col_resp_di] if col_resp_di else []) + ([col_stat_di] if col_stat_di else []) + ["Dias Uteis"]
-            fv_di = fora_di[cf_di].copy().sort_values("Dias Uteis", ascending=False)
-            rf_di = {col_nos_di:"N° OS","Dias Uteis":"Dias em Aberto"}
-            if col_resp_di: rf_di[col_resp_di] = "Responsável"
-            if col_stat_di: rf_di[col_stat_di] = "Status"
-            st.markdown(estilizar(fv_di.rename(columns=rf_di)), unsafe_allow_html=True)
-            st.markdown("")
-
-        # ── Exportar Excel ───────────────────────────────────────────────────
+        # ── Exportar Excel ────────────────────────────────────────────────
         excel_di = gerar_excel_os(df_di, sla_d_di, col_nos_di, col_resp_di, col_emp_di, col_stat_di, col_final_di)
         st.download_button(
             label="📥 Exportar Relatório Excel — Desempenho Individual",
@@ -2989,6 +3190,8 @@ function syncSaldoDI(){{
             file_name=f"Desempenho_Individual_{datetime.today().strftime('%d%m%Y')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
+
 
 elif pagina == "⚙️ Configuração de Motivos":
     st.markdown('<div class="section-title">⚙️ Configuração de Motivos</div>', unsafe_allow_html=True)
