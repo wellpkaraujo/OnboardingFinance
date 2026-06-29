@@ -2436,34 +2436,40 @@ function syncLineResp(){{
                         # ── Gráfico 2: Atividade diária do(s) responsável(is) selecionado(s) ──
                         if resp_selecionados and col_criacao_g and col_criacao_g in df_resp.columns:
                             for nome_resp in resp_selecionados:
-                                df_um = df_periodo[df_periodo[col_responsavel_g].astype(str).str.strip() == nome_resp].copy()
-                                if len(df_um) == 0:
+                                # Usa df_resp completo (sem corte de período) para saldo real
+                                df_um_full = df_resp[df_resp[col_responsavel_g].astype(str).str.strip() == nome_resp].copy()
+                                if len(df_um_full) == 0:
                                     continue
 
                                 dias_range = pd.date_range(resp_inicio, resp_fim, freq="D")
-                                labels_d, total_dia_list, fin_dia_list = [], [], []
+                                labels_d, total_dia_list, fin_dia_list, saldo_dia_list = [], [], [], []
 
                                 for dia in dias_range:
-                                    # Total de OS que existiam no dia (criadas até aquele dia e não finalizadas antes dele)
-                                    criadas_ate = df_um[df_um[col_criacao_g].dt.normalize() <= dia]
+                                    ts_dia = pd.Timestamp(dia)
+                                    # Carteira do dia: criadas até o dia e não finalizadas antes dele
+                                    criadas_ate = df_um_full[df_um_full[col_criacao_g].dt.normalize() <= ts_dia]
                                     finalizadas_antes = criadas_ate[
                                         criadas_ate[col_final_g].notna() &
-                                        (criadas_ate[col_final_g].dt.normalize() < dia)
+                                        (criadas_ate[col_final_g].dt.normalize() < ts_dia)
                                     ]
                                     total_no_dia = len(criadas_ate) - len(finalizadas_antes)
 
                                     # Finalizadas neste dia
-                                    fin_no_dia = df_um[
-                                        df_um[col_final_g].notna() &
-                                        (df_um[col_final_g].dt.normalize() == dia)
+                                    fin_no_dia = df_um_full[
+                                        df_um_full[col_final_g].notna() &
+                                        (df_um_full[col_final_g].dt.normalize() == ts_dia)
                                     ].shape[0]
+
+                                    # Saldo = carteira do dia - finalizadas no dia
+                                    saldo_no_dia = total_no_dia - fin_no_dia
 
                                     labels_d.append(dia.strftime("%d/%m"))
                                     total_dia_list.append(int(total_no_dia))
                                     fin_dia_list.append(int(fin_no_dia))
+                                    saldo_dia_list.append(int(saldo_no_dia))
 
                                 # Remove dias completamente zerados das bordas
-                                df_diario = pd.DataFrame({"label": labels_d, "total": total_dia_list, "fin": fin_dia_list})
+                                df_diario = pd.DataFrame({"label": labels_d, "total": total_dia_list, "fin": fin_dia_list, "saldo": saldo_dia_list})
                                 primeiro = df_diario[(df_diario["total"] > 0) | (df_diario["fin"] > 0)].index.min()
                                 if pd.notna(primeiro):
                                     df_diario = df_diario.loc[primeiro:]
@@ -2471,23 +2477,38 @@ function syncLineResp(){{
                                 labels_d       = df_diario["label"].tolist()
                                 total_dia_list = df_diario["total"].tolist()
                                 fin_dia_list   = df_diario["fin"].tolist()
+                                saldo_dia_list = df_diario["saldo"].tolist()
 
-                                st.markdown(f'<div class="section-title">📅 Atividade Diária — {nome_resp}</div>', unsafe_allow_html=True)
+                                # Saldo atual = OS sem finalização (carteira viva hoje)
+                                saldo_atual = int(df_um_full[df_um_full[col_final_g].isna()].shape[0])
+
+                                _cid = nome_resp.replace(' ','_').replace('/','_').replace('.','_')
+                                st.markdown(
+                                    f'<div class="section-title">📅 Atividade Diária — {nome_resp} ' +
+                                    f'&nbsp;<span style="font-size:0.82rem;font-weight:500;color:#888;">Saldo atual: ' +
+                                    f'<b style="color:#e05a5a">{saldo_atual} OS em aberto</b></span></div>',
+                                    unsafe_allow_html=True
+                                )
+                                _saldo_max = max(saldo_dia_list) if saldo_dia_list else 1
                                 components.html(f"""<!DOCTYPE html><html><head><meta charset="utf-8"></head>
 <body style="margin:0;padding:0;background:transparent;font-family:'Inter',sans-serif;">
 <div style="padding:8px 0 0 0;">
   <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:10px;font-size:12px;color:#666;justify-content:center;">
     <span><span style="width:10px;height:10px;border-radius:2px;background:#5b8dd9;display:inline-block;"></span> OS no Dia (carteira)</span>
     <span><span style="width:10px;height:10px;border-radius:2px;background:#6dbf8b;display:inline-block;"></span> Finalizadas no Dia</span>
+    <span><span style="width:20px;height:2px;background:#e05a5a;display:inline-block;vertical-align:middle;"></span> Saldo do Dia</span>
   </div>
-  <div style="position:relative;width:100%;height:300px;"><canvas id="diarioResp_{nome_resp.replace(' ','_').replace('/','_')}"></canvas></div>
+  <div style="position:relative;width:100%;height:72px;"><canvas id="lineSaldo_{_cid}"></canvas></div>
+  <div style="position:relative;width:100%;height:300px;"><canvas id="diarioResp_{_cid}"></canvas></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>
 const labels={labels_d};
 const total={total_dia_list};
 const fin={fin_dia_list};
-new Chart(document.getElementById('diarioResp_{nome_resp.replace(' ','_').replace('/','_')}').getContext('2d'),{{
+const saldo={saldo_dia_list};
+let barDiario,lineSaldo;
+barDiario=new Chart(document.getElementById('diarioResp_{_cid}').getContext('2d'),{{
   type:'bar',
   data:{{labels,datasets:[
     {{label:'OS no Dia',data:total,backgroundColor:'#5b8dd9',barPercentage:0.6,categoryPercentage:0.7}},
@@ -2495,6 +2516,7 @@ new Chart(document.getElementById('diarioResp_{nome_resp.replace(' ','_').replac
   ]}},
   options:{{
     responsive:true,maintainAspectRatio:false,
+    animation:{{onComplete:syncSaldo}},
     plugins:{{legend:{{display:false}},tooltip:{{callbacks:{{label:ctx=>` ${{ctx.dataset.label}}: ${{ctx.parsed.y}}`}}}}}},
     scales:{{
       x:{{grid:{{display:false}},ticks:{{font:{{size:11}},color:'#888780',maxRotation:35,minRotation:25}},border:{{display:false}}}},
@@ -2514,7 +2536,36 @@ new Chart(document.getElementById('diarioResp_{nome_resp.replace(' ','_').replac
     }});
   }}}}]
 }});
-</script></body></html>""", height=360)
+function syncSaldo(){{
+  if(!barDiario)return;
+  const meta=barDiario.getDatasetMeta(0);
+  const xPos=meta.data.map(b=>b.x);
+  const lp=xPos[0]; const rp=barDiario.width-xPos[xPos.length-1];
+  if(lineSaldo)lineSaldo.destroy();
+  lineSaldo=new Chart(document.getElementById('lineSaldo_{_cid}').getContext('2d'),{{
+    type:'line',
+    data:{{labels,datasets:[{{
+      data:saldo,borderColor:'#e05a5a',backgroundColor:'#e05a5a',
+      pointBackgroundColor:'#e05a5a',pointRadius:5,pointHoverRadius:7,
+      borderWidth:2,tension:0
+    }}]}},
+    options:{{
+      responsive:true,maintainAspectRatio:false,
+      layout:{{padding:{{top:20,left:lp,right:rp,bottom:4}}}},
+      plugins:{{legend:{{display:false}}}},
+      scales:{{x:{{display:false}},y:{{display:false,min:0,max:{_saldo_max}*1.5+1}}}}
+    }},
+    plugins:[{{id:'lblSaldo',afterDatasetsDraw(chart){{
+      const ctx2=chart.ctx;
+      chart.getDatasetMeta(0).data.forEach((pt,i)=>{{
+        ctx2.save();ctx2.font='600 11px Inter,sans-serif';
+        ctx2.fillStyle='#c0392b';ctx2.textAlign='center';
+        ctx2.fillText(saldo[i],pt.x,pt.y-10);ctx2.restore();
+      }});
+    }}}}]
+  }});
+}}
+</script></body></html>""", height=420)
 
         except Exception as erro_resp:
             st.warning(f"Erro ao gerar gráfico de performance por responsável: {erro_resp}")
