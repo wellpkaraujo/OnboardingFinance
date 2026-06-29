@@ -2872,6 +2872,11 @@ elif pagina == "👤 Desempenho Individual":
             df_di_base = df_di_base[df_di_base[col_resp_di].astype(str).str.strip().isin(_resp_filtro)]
         resp_resumo_sel = _resp_filtro
 
+        # ── Recalcular Dentro SLA com o valor atual do input ─────────────
+        if "Dias Uteis" in df_di_base.columns:
+            df_di_base = df_di_base.copy()
+            df_di_base["Dentro SLA"] = df_di_base["Dias Uteis"] <= sla_dias_di
+
         finalizadas_di = df_di_base[df_di_base["Status Calculado"] == "Finalizada"]
         andamento_di   = df_di_base[df_di_base["Status Calculado"] != "Finalizada"]
         dentro_di      = andamento_di[andamento_di["Dentro SLA"]]
@@ -2881,8 +2886,8 @@ elif pagina == "👤 Desempenho Individual":
         st.markdown('<div class="section-title">Resumo Geral</div>', unsafe_allow_html=True)
         pct_dentro_di = round(len(dentro_di)/len(andamento_di)*100, 1) if len(andamento_di) > 0 else 0
         pct_fora_di   = round(len(fora_di)/len(andamento_di)*100, 1)   if len(andamento_di) > 0 else 0
-        # % SLA das finalizadas
-        fin_sla = finalizadas_di[finalizadas_di["Dentro SLA"]].shape[0] if "Dentro SLA" in finalizadas_di.columns else 0
+        # % SLA das finalizadas — recalculado com sla_dias_di atual
+        fin_sla = int(finalizadas_di["Dentro SLA"].sum()) if "Dentro SLA" in finalizadas_di.columns else 0
         pct_fin_sla = round(fin_sla/len(finalizadas_di)*100, 1) if len(finalizadas_di) > 0 else 0
         media_dias = round(finalizadas_di["Dias Uteis"].mean(), 1) if len(finalizadas_di) > 0 else 0
 
